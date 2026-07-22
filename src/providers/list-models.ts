@@ -139,8 +139,9 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
   return { models, warnings };
 }
 
-export function formatModelLabel(m: DiscoveredModel): string {
-  const parts = [m.id];
+export function formatModelLabel(m: DiscoveredModel, opts?: { stripProvider?: boolean }): string {
+  const name = opts?.stripProvider ? m.id.slice(m.provider.length + 1) : m.id;
+  const parts = [name];
   if (m.contextWindow) {
     parts.push(m.contextWindow >= 1_000_000 ? `${(m.contextWindow / 1e6).toFixed(0)}M ctx` : `${Math.round(m.contextWindow / 1000)}k ctx`);
   }

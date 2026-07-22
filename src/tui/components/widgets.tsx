@@ -138,14 +138,17 @@ export function DiffText(props: { diff: string; maxLines?: number }): React.Reac
 export interface SelectItem {
   label: string;
   value: string;
+  /** Non-selectable section header (e.g. a provider name). */
+  header?: boolean;
 }
 
-const FILTER_VISIBLE_ROWS = 12;
+const FILTER_VISIBLE_ROWS = 14;
 
 /**
- * Filterable select: type to narrow, arrows to move, Enter picks, Esc cancels.
- * Renders a sliding window so hundreds of items (e.g. OpenRouter's model
- * list) stay usable in a terminal.
+ * Filterable select with section headers: type to narrow, arrows move over
+ * selectable rows only, Enter picks, Esc cancels. Headers survive filtering
+ * only while they still have visible children. A sliding window keeps
+ * hundreds of items (e.g. OpenRouter's model list) usable in a terminal.
  */
 export function FilterSelect(props: {
   items: SelectItem[];
@@ -155,13 +158,29 @@ export function FilterSelect(props: {
   placeholder?: string;
 }): React.ReactElement {
   const [query, setQuery] = useState("");
-  const [index, setIndex] = useState(0);
+  const [sel, setSel] = useState(0); // index into the selectable subset
 
   const q = query.toLowerCase();
-  const filtered = q
-    ? props.items.filter((i) => i.label.toLowerCase().includes(q))
-    : props.items;
-  const clampedIndex = Math.min(index, Math.max(0, filtered.length - 1));
+  const rows: SelectItem[] = [];
+  for (let i = 0; i < props.items.length; i++) {
+    const it = props.items[i];
+    if (!it) continue;
+    if (it.header) {
+      for (let j = i + 1; j < props.items.length; j++) {
+        const child = props.items[j];
+        if (!child || child.header) break;
+        if (!q || child.label.toLowerCase().includes(q)) {
+          rows.push(it);
+          break;
+        }
+      }
+    } else if (!q || it.label.toLowerCase().includes(q)) {
+      rows.push(it);
+    }
+  }
+  const selectableRowIdx = rows.flatMap((r, i) => (r.header ? [] : [i]));
+  const clampedSel = Math.min(sel, Math.max(0, selectableRowIdx.length - 1));
+  const currentRow = selectableRowIdx[clampedSel] ?? -1;
 
   useInput(
     (input, key) => {
@@ -170,51 +189,55 @@ export function FilterSelect(props: {
         return;
       }
       if (key.return) {
-        const item = filtered[clampedIndex];
+        const item = rows[currentRow];
         if (item) props.onSelect(item.value);
         return;
       }
-      if (key.upArrow) {
-        setIndex(Math.max(0, clampedIndex - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setIndex(Math.min(filtered.length - 1, clampedIndex + 1));
-        return;
-      }
+      if (key.upArrow) return setSel(Math.max(0, clampedSel - 1));
+      if (key.downArrow) return setSel(Math.min(selectableRowIdx.length - 1, clampedSel + 1));
       if (key.backspace || key.delete) {
         setQuery((v) => v.slice(0, -1));
-        setIndex(0);
+        setSel(0);
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        setQuery((v) => v + input);
-        setIndex(0);
+        setQuery((v) => v + input.replace(/\r?\n/g, ""));
+        setSel(0);
       }
     },
     { isActive: props.active },
   );
 
-  const windowStart = Math.max(0, Math.min(clampedIndex - 5, filtered.length - FILTER_VISIBLE_ROWS));
-  const visible = filtered.slice(windowStart, windowStart + FILTER_VISIBLE_ROWS);
+  const anchor = currentRow >= 0 ? currentRow : 0;
+  const windowStart = Math.max(0, Math.min(anchor - 6, rows.length - FILTER_VISIBLE_ROWS));
+  const visible = rows.slice(windowStart, windowStart + FILTER_VISIBLE_ROWS);
+  const selectableCount = selectableRowIdx.length;
+  const totalSelectable = props.items.filter((i) => !i.header).length;
 
   return (
     <Box flexDirection="column">
       <Box>
         <Text color="cyan">filter: </Text>
         <Text>{query || (props.placeholder ?? "type to filter…")}</Text>
-        <Text color="gray"> ({filtered.length}/{props.items.length})</Text>
+        <Text color="gray"> ({selectableCount}/{totalSelectable})</Text>
       </Box>
       {visible.map((item, i) => {
         const absolute = windowStart + i;
+        if (item.header) {
+          return (
+            <Text key={`h-${item.value}`} bold color="magenta">
+              {item.label}
+            </Text>
+          );
+        }
         return (
-          <Text key={item.value} color={absolute === clampedIndex ? "cyan" : undefined}>
-            {absolute === clampedIndex ? "❯ " : "  "}
+          <Text key={item.value} color={absolute === currentRow ? "cyan" : undefined}>
+            {absolute === currentRow ? "❯ " : "  "}
             {item.label}
           </Text>
         );
       })}
-      {filtered.length === 0 ? <Text color="gray">  (no matches — Esc to cancel)</Text> : null}
+      {selectableCount === 0 ? <Text color="gray">  (no matches — Esc to cancel)</Text> : null}
     </Box>
   );
 }

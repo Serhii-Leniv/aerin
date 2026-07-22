@@ -42,7 +42,8 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
 
   const setup = await setupAgent(flags, askPermission);
   for (const w of setup.warnings) stderr.write(`warning: ${w}\n`);
-  stdout.write(`aerin ${setup.modelId} — ${setup.cwd}\nType /help for commands.\n\n`);
+  const { VERSION } = await import("../version.js");
+  stdout.write(`✦ Aerin v${VERSION} — ${setup.modelId}\n  ${setup.cwd} · /help for commands\n\n`);
 
   let running = false;
   rl.on("SIGINT", () => {

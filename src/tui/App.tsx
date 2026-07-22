@@ -5,7 +5,9 @@ import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
 import type { AerinConfig } from "../config/config.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
+import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
+import { VERSION } from "../version.js";
 import { SessionStore } from "../session/store.js";
 import { renderMarkdown } from "./markdown.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -33,8 +35,26 @@ export interface TuiSetup {
 
 interface TranscriptItem {
   key: number;
-  kind: "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
+  kind: "banner" | "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
   text: string;
+}
+
+/** Grouped picker rows: one header per provider, models beneath it. */
+function buildPickerItems(models: DiscoveredModel[]): { label: string; value: string; header?: boolean }[] {
+  const items: { label: string; value: string; header?: boolean }[] = [];
+  let lastProvider = "";
+  for (const m of models) {
+    if (m.provider !== lastProvider) {
+      lastProvider = m.provider;
+      items.push({
+        label: `${PROVIDERS[m.provider]?.name ?? m.provider}`,
+        value: `__header_${m.provider}`,
+        header: true,
+      });
+    }
+    items.push({ label: formatModelLabel(m, { stripProvider: true }), value: m.id });
+  }
+  return items;
 }
 
 interface PendingPermission {
@@ -56,7 +76,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const { exit } = useApp();
 
   const [items, setItems] = useState<TranscriptItem[]>(() => [
-    { key: 0, kind: "info", text: `aerin ${setup.modelId} — ${setup.cwd}\n${HELP_TEXT}` },
+    { key: 0, kind: "banner", text: "" },
     ...setup.warnings.map((w, i) => ({ key: i + 1, kind: "error" as const, text: `warning: ${w}` })),
   ]);
   const [streaming, setStreaming] = useState("");
@@ -290,25 +310,55 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   return (
     <Box flexDirection="column">
       <Static items={items}>
-        {(item) => (
-          <Box key={item.key} marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}>
-            <Text
-              color={
-                item.kind === "user"
-                  ? "cyan"
-                  : item.kind === "error" || item.kind === "tool-error"
-                    ? "red"
-                    : item.kind === "tool"
-                      ? "yellow"
-                      : item.kind === "info"
-                        ? "gray"
-                        : undefined
-              }
+        {(item) =>
+          item.kind === "banner" ? (
+            <Box
+              key={item.key}
+              flexDirection="column"
+              borderStyle="round"
+              borderColor="cyan"
+              paddingX={2}
+              marginBottom={1}
+              alignSelf="flex-start"
             >
-              {item.kind === "user" ? `> ${item.text}` : item.text}
-            </Text>
-          </Box>
-        )}
+              <Text>
+                <Text color="cyan" bold>
+                  ✦ Aerin
+                </Text>
+                <Text color="gray"> v{VERSION} — open-source coding agent</Text>
+              </Text>
+              <Text> </Text>
+              <Text>
+                <Text color="gray">model </Text>
+                {setup.modelId}
+              </Text>
+              <Text>
+                <Text color="gray">cwd   </Text>
+                {setup.cwd}
+              </Text>
+              <Text> </Text>
+              <Text color="gray">/help commands · /model switch model · Esc interrupt · Ctrl+C twice quit</Text>
+            </Box>
+          ) : (
+            <Box key={item.key} marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}>
+              <Text
+                color={
+                  item.kind === "user"
+                    ? "cyan"
+                    : item.kind === "error" || item.kind === "tool-error"
+                      ? "red"
+                      : item.kind === "tool"
+                        ? "yellow"
+                        : item.kind === "info"
+                          ? "gray"
+                          : undefined
+                }
+              >
+                {item.kind === "user" ? `> ${item.text}` : item.text}
+              </Text>
+            </Box>
+          )
+        }
       </Static>
 
       {streaming ? <Text>{streaming}</Text> : null}
@@ -372,7 +422,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color="cyan">Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            items={modelPicker.map((m) => ({ label: formatModelLabel(m), value: m.id }))}
+            items={buildPickerItems(modelPicker)}
             onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
               setModelPicker(null);
