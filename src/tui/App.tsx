@@ -177,6 +177,12 @@ function shortenPath(p: string, max = 45): string {
   return out;
 }
 
+/** "42s" / "3m 12s" for turn durations. */
+function fmtDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1e3).toFixed(n >= 100_000 ? 0 : 1)}k`;
@@ -491,6 +497,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         if (streamBuf.current.trim()) pushItem("assistant", withDot(renderMarkdown(streamBuf.current, mdWidth())));
         streamBuf.current = "";
         setStreaming("");
+        // Tell the user what the wait cost them — but skip trivial turns.
+        const elapsed = Date.now() - turnStartRef.current;
+        if (elapsed >= 3000) pushItem("info", `  └ done in ${fmtDuration(elapsed)}`);
         settleDialogs();
         setSubagents(new Map()); // clear stragglers on abort/error
         setTerminalTitle(`✦ aerin — ${dirName}`);
@@ -1009,7 +1018,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
       {thinking && reasoningTail ? (
         <Box flexDirection="column" marginBottom={0}>
-          <Text color={C.dim} dimColor>
+          <Text color={C.magenta} italic>
             {reasoningTail}
           </Text>
         </Box>

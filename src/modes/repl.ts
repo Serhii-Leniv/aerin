@@ -95,6 +95,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
 
   const runTurn = async (prompt: string): Promise<void> => {
     running = true;
+    const turnStart = Date.now();
     let textBuf = "";
     const expanded = await expandMentions(prompt, setup.cwd).catch(() => ({ text: prompt, images: [] }));
     try {
@@ -151,8 +152,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       if (renderForTty && textBuf.trim()) stdout.write(renderMarkdown(textBuf, (stdout.columns ?? 80) - 2) + "\n");
     }
     const cost = setup.agent.totalCostUsd;
+    const secs = Math.round((Date.now() - turnStart) / 1000);
     stdout.write(
-      `  [${setup.agent.totalInputTokens} in / ${setup.agent.totalOutputTokens} out${cost ? ` / ~$${cost.toFixed(4)}` : ""}]\n\n`,
+      `  [${secs >= 3 ? `${secs}s / ` : ""}${setup.agent.totalInputTokens} in / ${setup.agent.totalOutputTokens} out${cost ? ` / ~$${cost.toFixed(4)}` : ""}]\n\n`,
     );
   };
 
