@@ -817,10 +817,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     [setup, pushItem],
   );
 
+  // (exit() and abort() are stable; used directly inside onSubmit below)
   const onSubmit = useCallback(
     (value: string) => {
       const line = value.trim();
       if (!line) return;
+      // Exit is never queued — it aborts whatever is running and quits now.
+      if (line === "/exit" || line === "/quit") {
+        setup.agent.abort();
+        exit();
+        return;
+      }
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (workingRef.current) {
         setQueued((q) => [...q, line]);
@@ -882,12 +889,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       return;
     }
     if (key.ctrl && input === "c") {
+      // First press interrupts any running turn AND arms exit; a second press
+      // within 1.5s quits immediately — no waiting out the abort.
       if (workingRef.current) {
         settleDialogs();
         setup.agent.abort();
-        return;
       }
       if (exitArmed) {
+        setup.agent.abort();
         exit();
       } else {
         setExitArmed(true);
