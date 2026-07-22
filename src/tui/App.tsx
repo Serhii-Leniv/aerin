@@ -13,7 +13,7 @@ import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
 import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
-import type { PermissionPolicy } from "../permissions/policy.js";
+import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
@@ -201,7 +201,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     resolve: (answer: string) => void;
   } | null>(null);
   const [questionOther, setQuestionOther] = useState(false);
-  const [planMode, setPlanMode] = useState(false);
+  const [mode, setMode] = useState<PermissionMode>("manual");
+  const planMode = mode === "plan";
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -632,12 +633,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           return;
         }
         case "/plan": {
-          const next = !setup.policy.inPlanMode;
-          setup.policy.setPlanMode(next);
-          setPlanMode(next);
+          const next: PermissionMode = setup.policy.inPlanMode ? "manual" : "plan";
+          setup.policy.setMode(next);
+          setMode(next);
           pushItem(
             "info",
-            next
+            next === "plan"
               ? "(plan mode ON — write/execute tools are denied; the agent will explore and present a plan)"
               : "(plan mode OFF — the agent can make changes again)",
           );
@@ -757,8 +758,23 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     setQuestionOther(false);
   }, []);
 
-  // Global keys: Esc interrupts; PgUp/PgDn scroll the transcript; double Ctrl+C exits.
+  // Global keys: Esc interrupts; Shift+Tab cycles modes; PgUp/PgDn scroll; double Ctrl+C exits.
   useInput((input, key) => {
+    if (key.tab && key.shift) {
+      // manual → accept edits → plan → manual (Claude Code order)
+      const next: PermissionMode = mode === "manual" ? "accept" : mode === "accept" ? "plan" : "manual";
+      setup.policy.setMode(next);
+      setMode(next);
+      pushItem(
+        "info",
+        next === "manual"
+          ? "(mode: manual — edits and commands ask)"
+          : next === "accept"
+            ? "(mode: accept edits — file changes auto-approved, commands still ask)"
+            : "(mode: plan — read-only, the agent presents a plan)",
+      );
+      return;
+    }
     if (key.pageUp) {
       scrollBy(Math.max(3, viewportHRef.current - 2));
       return;
@@ -1146,7 +1162,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               if (name !== "/help") runCommand(name);
             }}
           />
-          <Text color={C.dim}>Esc interrupts a running turn · Ctrl+C twice exits · Tab completes /commands</Text>
+          <Text color={C.dim}>
+            Esc interrupt/clear · Esc Esc edit last · Shift+Tab cycle manual/accept/plan · Ctrl+C twice exit
+          </Text>
         </Box>
       ) : null}
 
@@ -1192,7 +1210,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {inputActive ? (
         <Box
           borderStyle="round"
-          borderColor={planMode ? C.magenta : working ? C.warn : C.accent}
+          borderColor={planMode ? C.magenta : mode === "accept" ? C.ok : working ? C.warn : C.accent}
           paddingX={1}
         >
           <LineInput
@@ -1202,6 +1220,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             history={inputHistory}
             commands={allCommands}
             files={workspaceFiles}
+            escActive={!working}
+            recallLast={() => inputHistory[inputHistory.length - 1]}
             placeholder={
               working
                 ? "type your next message — it sends when this turn finishes"
@@ -1234,7 +1254,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
               : ""}
           </Text>
-          {planMode ? <Text color={C.magenta}> · PLAN</Text> : null}
+          {planMode ? <Text color={C.magenta}> · PLAN (shift+tab)</Text> : null}
+          {mode === "accept" ? <Text color={C.ok}> · ⏵⏵ accept edits (shift+tab)</Text> : null}
           {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}
           {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}
           {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}

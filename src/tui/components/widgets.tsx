@@ -27,12 +27,17 @@ export function LineInput(props: {
   files?: readonly string[];
   /** Dim hint shown while the input is empty. */
   placeholder?: string;
+  /** When true, Esc clears the draft; a second Esc within 600ms recalls the last message. */
+  escActive?: boolean;
+  /** Supplier of the last submitted message for double-Esc recall. */
+  recallLast?: () => string | undefined;
 }): React.ReactElement {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
   const [histIdx, setHistIdx] = useState(-1); // -1 = editing a fresh line
   const [draft, setDraft] = useState("");
   const [suggIdx, setSuggIdx] = useState(0);
+  const lastEsc = React.useRef(0);
 
   const set = (v: string, c: number) => {
     setValue(v);
@@ -67,15 +72,31 @@ export function LineInput(props: {
   useInput(
     (input, key) => {
       const history = props.history ?? [];
+      // Esc clears the draft; Esc-Esc (600ms) recalls the last message to edit.
+      if (key.escape && props.escActive) {
+        const now = Date.now();
+        if (value) {
+          set("", 0);
+          setSuggIdx(0);
+          lastEsc.current = now;
+        } else if (now - lastEsc.current < 600) {
+          const last = props.recallLast?.();
+          if (last) set(last, last.length);
+          lastEsc.current = 0;
+        } else {
+          lastEsc.current = now;
+        }
+        return;
+      }
       if (fileMatches.length > 0 && atMatch && atMatch[0].length > 1) {
         if (key.upArrow) return setSuggIdx(Math.max(0, cFile - 1));
         if (key.downArrow) return setSuggIdx(Math.min(fileMatches.length - 1, cFile + 1));
-        if (key.tab || key.return) return completeFile();
+        if ((key.tab && !key.shift) || key.return) return completeFile();
       }
       if (matches.length > 0) {
         if (key.upArrow) return setSuggIdx(Math.max(0, cSugg - 1));
         if (key.downArrow) return setSuggIdx(Math.min(matches.length - 1, cSugg + 1));
-        if (key.tab) {
+        if (key.tab && !key.shift) {
           const m = matches[cSugg];
           if (m) set(m.name, m.name.length);
           setSuggIdx(0);

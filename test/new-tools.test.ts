@@ -102,6 +102,15 @@ describe("plan mode", () => {
     expect(policy.decide("execute", { tool: "bash", target: "rm -rf" })).toBe("deny");
   });
 
+  test("accept mode auto-approves writes but not commands", () => {
+    const policy = new PermissionPolicy([], false);
+    policy.setMode("accept");
+    expect(policy.decide("write", { tool: "edit", target: "src/x.ts" })).toBe("allow");
+    expect(policy.decide("execute", { tool: "bash", target: "npm test" })).toBe("ask");
+    policy.setMode("manual");
+    expect(policy.decide("write", { tool: "edit", target: "src/x.ts" })).toBe("ask");
+  });
+
   test("allow-rules never authorize chained bash commands", () => {
     const policy = new PermissionPolicy(["bash(git *)"], false);
     expect(policy.decide("execute", { tool: "bash", target: "git status" })).toBe("allow");
