@@ -26,8 +26,10 @@ export const MODEL_TABLE: Record<string, ModelInfo> = {
   // OpenAI / Google / OpenRouter / Ollama entries are best-effort; extend as needed.
   "openai/gpt-4.1": { contextWindow: 1_000_000, maxOutput: 32_768 },
   "openai/gpt-4o": { contextWindow: 128_000, maxOutput: 16_384 },
-  "google/gemini-2.5-pro": { contextWindow: 1_000_000, maxOutput: 65_536 },
-  "google/gemini-2.5-flash": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  "google/gemini-flash-latest": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  "google/gemini-pro-latest": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  "google/gemini-3-flash-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  "google/gemini-3-pro-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
 };
 
 export function modelInfo(modelId: string): ModelInfo {
