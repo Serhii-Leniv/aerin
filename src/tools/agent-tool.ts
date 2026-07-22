@@ -4,6 +4,7 @@ import type { ToolDef, ToolContext } from "./types.js";
 import { truncateOutput } from "./types.js";
 import { readTool, lsTool } from "./fs-tools.js";
 import { globTool, grepTool } from "./search-tools.js";
+import { webFetchTool, webSearchTool } from "./web-tools.js";
 import { Agent } from "../core/agent.js";
 import { buildSubagentSystemPrompt } from "../core/system-prompt.js";
 import { PermissionPolicy } from "../permissions/policy.js";
@@ -16,9 +17,10 @@ const SUBAGENT_TOKEN_BUDGET = 500_000;
  * Read-only toolset for sub-agents. No bash (keeps the agent tool read-tier,
  * so it auto-runs without a permission prompt), no write/edit, and — the
  * recursion guard — no agent tool, so a sub-agent cannot spawn sub-agents.
+ * Web tools are read-only too, so research sub-agents can consult the web.
  */
 export function subagentTools(): ToolDef[] {
-  return [readTool, lsTool, globTool, grepTool];
+  return [readTool, lsTool, globTool, grepTool, webSearchTool, webFetchTool];
 }
 
 export interface AgentToolDeps {
@@ -49,7 +51,8 @@ export function createAgentTool(deps: AgentToolDeps): ToolDef<z.ZodTypeAny> {
         .string()
         .describe(
           "The full task. Be specific: what to find, what to report back. " +
-            "The sub-agent has read-only access (read, ls, glob, grep) and returns a single text report.",
+            "The sub-agent has read-only access (read, ls, glob, grep, websearch, webfetch) " +
+            "and returns a single text report.",
         ),
     }),
     permission: "read",

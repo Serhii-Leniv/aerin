@@ -297,6 +297,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       setup.agent.loadSession(store, messages);
       pushItem("info", `── resumed conversation (${messages.length} messages) ──`);
       replayHistory(messages);
+      setCtxTokens(setup.agent.estimateContextTokens());
     },
     [setup, pushItem, replayHistory],
   );
@@ -309,18 +310,34 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         case "/help":
           pushItem("info", HELP_TEXT);
           return;
-        case "/clear":
+        case "/clear": {
           await setup.agent.clear();
-          pushItem("info", "(history cleared)");
+          // Really clear: wipe screen + scrollback, then re-print the banner.
+          // Old <Static> items stay in state (its internal cursor is append-only)
+          // but the ANSI wipe has already removed them from the terminal.
+          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+          setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
+          setCtxTokens(0);
           return;
-        case "/compact":
-          if (setup.agent.history.length === 0) {
+        }
+        case "/compact": {
+          const before = setup.agent.history.length;
+          if (before === 0) {
             pushItem("info", "(nothing to compact — history is empty)");
             return;
           }
           await setup.agent.compactNow();
-          pushItem("info", "(compacted)");
+          const after = setup.agent.history.length;
+          const est = setup.agent.estimateContextTokens();
+          setCtxTokens(est);
+          pushItem(
+            "info",
+            after === before
+              ? "(history is still small — nothing was summarized)"
+              : `(compacted ${before} → ${after} messages, ~${fmtTokens(est)} tokens of context)`,
+          );
           return;
+        }
         case "/exit":
         case "/quit":
           exit();
@@ -432,6 +449,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     if (setup.agent.history.length > 0) {
       pushItem("info", `── continuing conversation (${setup.agent.history.length} messages) ──`);
       replayHistory(setup.agent.history);
+      setCtxTokens(setup.agent.estimateContextTokens());
     }
     // With no usable model the startup warning already says to run /model;
     // keep the input active (auto-opening the picker would swallow typed
@@ -595,13 +613,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {inputActive ? (
-        <LineInput
-          prompt="> "
-          active={inputActive}
-          onSubmit={onSubmit}
-          history={inputHistory}
-          commands={SLASH_COMMANDS}
-        />
+        <Box borderStyle="round" borderColor="gray" paddingX={1}>
+          <LineInput
+            prompt="> "
+            active={inputActive}
+            onSubmit={onSubmit}
+            history={inputHistory}
+            commands={SLASH_COMMANDS}
+          />
+        </Box>
       ) : null}
 
       <Box>

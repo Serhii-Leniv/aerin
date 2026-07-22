@@ -6,7 +6,7 @@ import { mockModel } from "./mock-model.js";
 describe("subagentTools", () => {
   test("is exactly the read-only set — no agent (recursion guard), no write/edit/bash", () => {
     const names = subagentTools().map((t) => t.name).sort();
-    expect(names).toEqual(["glob", "grep", "ls", "read"]);
+    expect(names).toEqual(["glob", "grep", "ls", "read", "webfetch", "websearch"]);
   });
 
   test("every sub-agent tool is read-tier", () => {

@@ -109,6 +109,14 @@ export class Agent {
   async compactNow(): Promise<void> {
     this.messages = await compact(this.opts.model, this.messages);
     await this.opts.store?.rewrite(this.messages);
+    // The old provider-reported context size no longer describes this history;
+    // without the reset, shouldCompact() would re-fire on the next turn.
+    this.lastInputTokens = 0;
+  }
+
+  /** Rough size of the current history (~4 chars/token) — for the meter between requests. */
+  estimateContextTokens(): number {
+    return Math.round(JSON.stringify(this.messages).length / 4);
   }
 
   /** Declare tool schemas only — never `execute` — so the permission gate interposes. */
