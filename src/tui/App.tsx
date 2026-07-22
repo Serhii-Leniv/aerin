@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
 import type { AerinConfig } from "../config/config.js";
@@ -10,6 +10,7 @@ import { discoverModels, formatModelLabel, type DiscoveredModel } from "../provi
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
 import { renderMarkdown } from "../terminal/markdown.js";
+import { relativeTime } from "../terminal/format.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
@@ -64,18 +65,27 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
-const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /sessions /resume [id] /exit
+const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /resume /exit
 Esc interrupts a running turn. Ctrl+C twice exits.`;
 
 const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
-  { name: "/sessions", description: "list sessions in this directory" },
-  { name: "/resume", description: "resume a previous session — pick from a list, or /resume id" },
+  { name: "/resume", description: "resume a previous conversation in this directory" },
   { name: "/help", description: "show commands and keys" },
   { name: "/exit", description: "quit aerin" },
 ] as const;
+
+/** Concatenated text parts of a saved message (string or parts array). */
+function messageText(m: ModelMessage): string {
+  if (typeof m.content === "string") return m.content;
+  if (!Array.isArray(m.content)) return "";
+  return (m.content as { type?: string; text?: string }[])
+    .filter((p) => p?.type === "text" && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("");
+}
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
@@ -238,13 +248,40 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     [setup, pushItem, flushStream],
   );
 
+  // Re-render a saved conversation into the transcript, Claude Code-style:
+  // user/assistant text plus one-liners for the tool calls between them.
+  const replayHistory = useCallback((messages: readonly ModelMessage[]) => {
+    const add: TranscriptItem[] = [];
+    for (const m of messages) {
+      if (m.role === "user") {
+        const t = messageText(m);
+        if (t.trim()) add.push({ key: nextKey.current++, kind: "user", text: t });
+      } else if (m.role === "assistant") {
+        if (Array.isArray(m.content)) {
+          for (const part of m.content as { type?: string; text?: string; toolName?: string }[]) {
+            if (part?.type === "text" && part.text?.trim()) {
+              add.push({ key: nextKey.current++, kind: "assistant", text: renderMarkdown(part.text) });
+            } else if (part?.type === "tool-call" && part.toolName) {
+              add.push({ key: nextKey.current++, kind: "tool", text: `⏺ ${part.toolName}` });
+            }
+          }
+        } else {
+          const t = messageText(m);
+          if (t.trim()) add.push({ key: nextKey.current++, kind: "assistant", text: renderMarkdown(t) });
+        }
+      }
+    }
+    setItems((prev) => [...prev, ...add]);
+  }, []);
+
   const resumeSession = useCallback(
     async (id: string): Promise<void> => {
       const { store, messages } = await SessionStore.open(setup.cwd, id);
       setup.agent.loadSession(store, messages);
-      pushItem("info", `Resumed session ${id} (${messages.length} messages)`);
+      pushItem("info", `── resumed conversation (${messages.length} messages) ──`);
+      replayHistory(messages);
     },
-    [setup, pushItem],
+    [setup, pushItem, replayHistory],
   );
 
   const handleCommand = useCallback(
@@ -271,25 +308,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         case "/quit":
           exit();
           return;
-        case "/sessions": {
-          const sessions = await SessionStore.list(setup.cwd);
-          pushItem(
-            "info",
-            sessions.length
-              ? sessions.slice(0, 15).map((s) => `${s.id}  ${s.createdAt}  ${s.model}`).join("\n") +
-                  "\n(/resume to switch to one)"
-              : "(no sessions)",
-          );
-          return;
-        }
         case "/resume": {
           if (arg) {
             await resumeSession(arg);
             return;
           }
-          const sessions = await SessionStore.list(setup.cwd);
+          // Empty sessions are noise — only offer conversations with content.
+          const sessions = (await SessionStore.list(setup.cwd)).filter((s) => s.messageCount > 0);
           if (sessions.length === 0) {
-            pushItem("info", "(no sessions to resume)");
+            pushItem("info", "(no previous conversations in this directory)");
             return;
           }
           setSessionPicker(sessions);
@@ -384,6 +411,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   });
 
   useEffect(() => {
+    // A session continued via -c/-r arrives with history — show it.
+    if (setup.agent.history.length > 0) {
+      pushItem("info", `── continuing conversation (${setup.agent.history.length} messages) ──`);
+      replayHistory(setup.agent.history);
+    }
     // With no usable model the startup warning already says to run /model;
     // keep the input active (auto-opening the picker would swallow typed
     // commands) and skip any initial prompt — the stub model can't run it.
@@ -529,11 +561,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
       {sessionPicker ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Resume a session — type to filter, Esc to cancel</Text>
+          <Text color="cyan">Resume a conversation — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
             items={sessionPicker.map((s) => ({
-              label: `${s.id}  ${s.createdAt.slice(0, 19).replace("T", " ")}  ${s.model}${s.title ? `  ${s.title}` : ""}`,
+              label: `${relativeTime(s.createdAt).padEnd(11)} ${String(s.messageCount).padStart(3)} msg  ${s.title ?? "(no prompt yet)"}`,
               value: s.id,
             }))}
             onCancel={() => setSessionPicker(null)}

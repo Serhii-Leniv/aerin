@@ -2,7 +2,8 @@ import readline from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { PermissionDecision, PermissionRequest } from "../core/events.js";
-import { SessionStore } from "../session/store.js";
+import { SessionStore, type SessionSummary } from "../session/store.js";
+import { relativeTime } from "../terminal/format.js";
 import { discoverModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
@@ -23,8 +24,7 @@ const HELP = `Commands:
   /compact      summarize and compact the conversation
   /models       list models available from your providers
   /model <id>   switch model (any provider/model-id)
-  /sessions     list sessions in this directory
-  /resume [id]  resume a session (latest if no id)
+  /resume       list previous conversations; /resume <number> to pick one
   /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
 
@@ -111,6 +111,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     );
   };
 
+  // Numbered entries from the last bare /resume, consumed by "/resume <n>".
+  let resumeChoices: SessionSummary[] = [];
+
   // "quit" ends the REPL; anything else continues.
   const handleLine = async (line: string): Promise<"quit" | undefined> => {
       if (!line) return undefined;
@@ -133,16 +136,31 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         }
         return undefined;
       }
-      if (line === "/resume" || line.startsWith("/resume ")) {
-        const id = line.slice("/resume".length).trim() || (await SessionStore.latest(setup.cwd))?.id;
+      if (line === "/resume") {
+        resumeChoices = (await SessionStore.list(setup.cwd)).filter((s) => s.messageCount > 0).slice(0, 20);
+        if (resumeChoices.length === 0) {
+          stdout.write("  (no previous conversations in this directory)\n");
+          return undefined;
+        }
+        resumeChoices.forEach((s, i) => {
+          stdout.write(
+            `  ${String(i + 1).padStart(2)}. ${relativeTime(s.createdAt).padEnd(11)} ${String(s.messageCount).padStart(3)} msg  ${s.title ?? "(no prompt yet)"}\n`,
+          );
+        });
+        stdout.write("  pick one with: /resume <number>\n");
+        return undefined;
+      }
+      if (line.startsWith("/resume ")) {
+        const arg = line.slice("/resume ".length).trim();
+        const id = /^\d+$/.test(arg) ? resumeChoices[Number(arg) - 1]?.id : arg;
         if (!id) {
-          stdout.write("  (no sessions to resume)\n");
+          stdout.write("  no such entry — run /resume to list conversations first\n");
           return undefined;
         }
         try {
           const opened = await SessionStore.open(setup.cwd, id);
           setup.agent.loadSession(opened.store, opened.messages);
-          stdout.write(`  resumed ${id} (${opened.messages.length} messages)\n`);
+          stdout.write(`  resumed conversation (${opened.messages.length} messages)\n`);
         } catch (err) {
           stdout.write(`  resume failed: ${err instanceof Error ? err.message : err}\n`);
         }
@@ -164,14 +182,6 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         } catch (err) {
           stdout.write(`  ${err instanceof Error ? err.message : err}\n`);
         }
-        return undefined;
-      }
-      if (line === "/sessions") {
-        const sessions = await SessionStore.list(setup.cwd);
-        for (const s of sessions.slice(0, 20)) {
-          stdout.write(`  ${s.id}  ${s.createdAt}  ${s.model}\n`);
-        }
-        if (sessions.length === 0) stdout.write("  (none)\n");
         return undefined;
       }
       await runTurn(line);

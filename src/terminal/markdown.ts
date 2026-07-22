@@ -7,7 +7,8 @@ let configured = false;
 export function renderMarkdown(text: string): string {
   try {
     if (!configured) {
-      marked.use(markedTerminal() as Parameters<typeof marked.use>[0]);
+      // No "#" prefixes on headings — they render styled, not as raw markdown.
+      marked.use(markedTerminal({ showSectionPrefix: false }) as Parameters<typeof marked.use>[0]);
       configured = true;
     }
     const out = marked.parse(text, { async: false });

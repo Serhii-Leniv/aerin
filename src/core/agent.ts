@@ -127,6 +127,7 @@ export class Agent {
     const userMessage: ModelMessage = { role: "user", content: input };
     this.messages.push(userMessage);
     newMessages.push(userMessage);
+    await this.opts.store?.ensureTitle(input);
 
     const toolCtx: ToolContext = {
       cwd: this.opts.cwd,

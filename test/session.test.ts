@@ -45,6 +45,29 @@ describe("SessionStore", () => {
     expect(messages).toHaveLength(1);
   });
 
+  test("ensureTitle sets the title once and list() reports it with counts", async () => {
+    const cwd = await tmpCwd();
+    const store = await SessionStore.create(cwd, "m");
+    await store.append([{ role: "user", content: "fix the login bug" }]);
+    await store.ensureTitle("fix the login bug");
+    await store.ensureTitle("something else"); // no-op: title already set
+    const [s] = await SessionStore.list(cwd);
+    expect(s?.title).toBe("fix the login bug");
+    expect(s?.messageCount).toBe(1);
+  });
+
+  test("list() falls back to the first user prompt for untitled sessions", async () => {
+    const cwd = await tmpCwd();
+    const store = await SessionStore.create(cwd, "m");
+    await store.append([
+      { role: "user", content: "explain the build" },
+      { role: "assistant", content: "sure" },
+    ]);
+    const [s] = await SessionStore.list(cwd);
+    expect(s?.title).toBe("explain the build");
+    expect(s?.messageCount).toBe(2);
+  });
+
   test("rewrite preserves meta and replaces messages", async () => {
     const cwd = await tmpCwd();
     const store = await SessionStore.create(cwd, "m");

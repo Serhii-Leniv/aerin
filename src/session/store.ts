@@ -25,15 +25,32 @@ export interface SessionSummary {
   title: string | undefined;
   model: string;
   file: string;
+  messageCount: number;
 }
 
 export class SessionStore {
   private file: string;
   readonly id: string;
 
-  private constructor(private dir: string, meta: SessionMeta) {
+  private constructor(private dir: string, private meta: SessionMeta) {
     this.id = meta.id;
     this.file = path.join(dir, `${meta.id}.jsonl`);
+  }
+
+  /** Set the session title once, from the first user prompt. Cosmetic — never throws. */
+  async ensureTitle(firstPrompt: string): Promise<void> {
+    if (this.meta.title) return;
+    const title = firstPrompt.replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!title) return;
+    this.meta.title = title;
+    try {
+      const raw = await fs.readFile(this.file, "utf8");
+      const idx = raw.indexOf("\n");
+      const rest = idx >= 0 ? raw.slice(idx + 1) : "";
+      await fs.writeFile(this.file, JSON.stringify(this.meta) + "\n" + rest, "utf8");
+    } catch {
+      // never break a turn over a session title
+    }
   }
 
   static async create(cwd: string, model: string): Promise<SessionStore> {
@@ -85,13 +102,33 @@ export class SessionStore {
     for (const f of files) {
       const file = path.join(dir, f);
       try {
-        const fh = await fs.open(file, "r");
-        const { buffer, bytesRead } = await fh.read(Buffer.alloc(4096), 0, 4096, 0);
-        await fh.close();
-        const firstLine = buffer.toString("utf8", 0, bytesRead).split("\n")[0] ?? "";
-        const meta = JSON.parse(firstLine) as SessionMeta;
+        const raw = await fs.readFile(file, "utf8");
+        const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+        const meta = JSON.parse(lines[0] ?? "") as SessionMeta;
         if (meta.type !== "meta") continue;
-        summaries.push({ id: meta.id, createdAt: meta.createdAt, title: meta.title, model: meta.model, file });
+        // Sessions from before titles existed: fall back to the first user prompt.
+        let title = meta.title;
+        if (!title) {
+          for (const line of lines.slice(1)) {
+            try {
+              const m = JSON.parse(line) as { role?: string; content?: unknown };
+              if (m.role === "user" && typeof m.content === "string") {
+                title = m.content.replace(/\s+/g, " ").trim().slice(0, 80) || undefined;
+                break;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+        summaries.push({
+          id: meta.id,
+          createdAt: meta.createdAt,
+          title,
+          model: meta.model,
+          file,
+          messageCount: lines.length - 1,
+        });
       } catch {
         continue;
       }
