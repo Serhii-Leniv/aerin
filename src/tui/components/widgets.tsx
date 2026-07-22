@@ -1,31 +1,65 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 
+export interface CommandSuggestion {
+  name: string;
+  description: string;
+}
+
 /**
  * Single-line text input with cursor movement (←/→/Home/End), editing
  * (backspace, Ctrl+U clear, Ctrl+W delete word), and Up/Down history recall.
  * Pasted newlines are flattened to spaces so a multi-line paste becomes one
  * prompt instead of firing a submit per line.
+ *
+ * When `commands` is provided and the value is a bare "/prefix", a live
+ * suggestion list appears: ↑/↓ select, Tab completes, Enter runs.
  */
 export function LineInput(props: {
   prompt: string;
   onSubmit: (value: string) => void;
   active: boolean;
   history?: readonly string[];
+  commands?: readonly CommandSuggestion[];
 }): React.ReactElement {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
   const [histIdx, setHistIdx] = useState(-1); // -1 = editing a fresh line
   const [draft, setDraft] = useState("");
+  const [suggIdx, setSuggIdx] = useState(0);
 
   const set = (v: string, c: number) => {
     setValue(v);
     setCursor(Math.max(0, Math.min(c, v.length)));
   };
 
+  const suggesting = (props.commands?.length ?? 0) > 0 && value.startsWith("/") && !value.includes(" ");
+  const matches = suggesting
+    ? (props.commands ?? []).filter((c) => c.name.startsWith(value.toLowerCase()))
+    : [];
+  const cSugg = Math.min(suggIdx, Math.max(0, matches.length - 1));
+
   useInput(
     (input, key) => {
       const history = props.history ?? [];
+      if (matches.length > 0) {
+        if (key.upArrow) return setSuggIdx(Math.max(0, cSugg - 1));
+        if (key.downArrow) return setSuggIdx(Math.min(matches.length - 1, cSugg + 1));
+        if (key.tab) {
+          const m = matches[cSugg];
+          if (m) set(m.name, m.name.length);
+          setSuggIdx(0);
+          return;
+        }
+        if (key.return) {
+          const m = matches[cSugg];
+          set("", 0);
+          setSuggIdx(0);
+          setHistIdx(-1);
+          props.onSubmit(m ? m.name : value);
+          return;
+        }
+      }
       if (key.return) {
         const v = value;
         set("", 0);
@@ -76,6 +110,7 @@ export function LineInput(props: {
         const clean = input.replace(/\r?\n/g, " "); // flatten pasted newlines
         set(value.slice(0, cursor) + clean + value.slice(cursor), cursor + clean.length);
         setHistIdx(-1);
+        setSuggIdx(0);
       }
     },
     { isActive: props.active },
@@ -84,13 +119,23 @@ export function LineInput(props: {
   const before = value.slice(0, cursor);
   const at = value[cursor] ?? " ";
   const after = value.slice(cursor + 1);
+  const pad = Math.max(...matches.map((m) => m.name.length), 0) + 2;
 
   return (
-    <Box>
-      <Text color="cyan">{props.prompt}</Text>
-      <Text>{before}</Text>
-      {props.active ? <Text inverse>{at}</Text> : <Text>{at}</Text>}
-      <Text>{after}</Text>
+    <Box flexDirection="column">
+      <Box>
+        <Text color="cyan">{props.prompt}</Text>
+        <Text>{before}</Text>
+        {props.active ? <Text inverse>{at}</Text> : <Text>{at}</Text>}
+        <Text>{after}</Text>
+      </Box>
+      {matches.map((m, i) => (
+        <Text key={m.name} color={i === cSugg ? "cyan" : "gray"}>
+          {i === cSugg ? "❯ " : "  "}
+          {m.name.padEnd(pad)}
+          {m.description}
+        </Text>
+      ))}
     </Box>
   );
 }

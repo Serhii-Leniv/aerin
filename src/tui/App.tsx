@@ -65,6 +65,15 @@ interface PendingPermission {
 const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /sessions /exit
 Esc interrupts a running turn. Ctrl+C twice exits.`;
 
+const SLASH_COMMANDS = [
+  { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
+  { name: "/compact", description: "summarize the conversation to free context" },
+  { name: "/clear", description: "clear conversation history" },
+  { name: "/sessions", description: "list sessions in this directory" },
+  { name: "/help", description: "show commands and keys" },
+  { name: "/exit", description: "quit aerin" },
+] as const;
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1e3).toFixed(n >= 100_000 ? 0 : 1)}k`;
@@ -433,7 +442,13 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {inputActive ? (
-        <LineInput prompt="> " active={inputActive} onSubmit={onSubmit} history={inputHistory} />
+        <LineInput
+          prompt="> "
+          active={inputActive}
+          onSubmit={onSubmit}
+          history={inputHistory}
+          commands={SLASH_COMMANDS}
+        />
       ) : null}
 
       <Box>
