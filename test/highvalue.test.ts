@@ -93,6 +93,21 @@ describe("custom providers", () => {
   });
 });
 
+describe("provider catalog", () => {
+  test("catalog entries have valid endpoints and resolve after connecting", async () => {
+    const { PROVIDER_CATALOG, catalogEntry } = await import("../src/providers/catalog.js");
+    for (const e of PROVIDER_CATALOG) {
+      if (e.baseURL) expect(e.baseURL).toMatch(/^https?:\/\//);
+    }
+    const groq = catalogEntry("groq");
+    expect(groq?.baseURL).toContain("api.groq.com");
+    const model = resolveModel("groq/llama-3.3-70b-versatile", {
+      providers: { groq: { baseURL: groq!.baseURL!, apiKey: "gsk-test" } },
+    }) as { modelId?: string };
+    expect(model.modelId).toBe("llama-3.3-70b-versatile");
+  });
+});
+
 describe("persistProviderKey", () => {
   test("writes and merges provider entries", async () => {
     const file = path.join(await tmpCwd(), "config.json");

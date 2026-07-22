@@ -9,6 +9,7 @@ import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { persistModelChoice, persistProviderKey } from "../config/config.js";
 import { renderCommand } from "../core/commands.js";
+import { catalogEntry } from "../providers/catalog.js";
 import { expandMentions } from "../core/mentions.js";
 
 interface ReplFlags {
@@ -151,12 +152,12 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         return undefined;
       }
       if (line.startsWith("/connect")) {
-        const [, prov, key] = line.split(/\s+/);
+        const [, prov, key, url] = line.split(/\s+/);
         if (prov && key) {
-          await persistProviderKey(prov, key);
-          stdout.write(`  ${prov} key saved to global config\n`);
+          await persistProviderKey(prov, key, url ?? catalogEntry(prov)?.baseURL);
+          stdout.write(`  ${prov} saved to global config\n`);
         } else {
-          stdout.write("  usage: /connect <provider> <api-key>\n");
+          stdout.write("  usage: /connect <provider> <api-key> [baseURL]\n");
         }
         return undefined;
       }

@@ -6,7 +6,8 @@ import type { OnPermission, PermissionDecision, PermissionRequest } from "../cor
 import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
 import { renderCommand, type CustomCommand } from "../core/commands.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
-import { PROVIDERS } from "../providers/registry.js";
+import { PROVIDERS, resolveApiKey } from "../providers/registry.js";
+import { PROVIDER_CATALOG, catalogEntry } from "../providers/catalog.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
@@ -93,6 +94,13 @@ function buildPickerItems(
   return items;
 }
 
+type ConnectState =
+  | { step: "pick" }
+  | { step: "key"; id: string; label: string; baseURL?: string }
+  | { step: "custom-name" }
+  | { step: "custom-url"; id: string }
+  | { step: "custom-key"; id: string; baseURL: string };
+
 interface PendingPermission {
   req: PermissionRequest;
   resolve: (d: PermissionDecision) => void;
@@ -102,7 +110,7 @@ const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
   { name: "/plan", description: "toggle plan mode — read-only exploration, agent presents a plan" },
   { name: "/undo", description: "revert the file changes of the last turn" },
-  { name: "/connect", description: "add a provider API key (pick provider, paste key)" },
+  { name: "/connect", description: "connect a provider — catalog of 14 + custom endpoints" },
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
@@ -174,8 +182,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
   const [helpMenu, setHelpMenu] = useState(false);
-  const [connectPicker, setConnectPicker] = useState(false);
-  const [connectFor, setConnectFor] = useState<string | null>(null);
+  const [connect, setConnect] = useState<ConnectState | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [question, setQuestion] = useState<{
     q: string;
@@ -443,6 +450,28 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     }
   }, [setup, pushItem]);
 
+  const saveConnection = useCallback(
+    (id: string, key: string, baseURL?: string) => {
+      void persistProviderKey(id, key, baseURL)
+        .then(() => {
+          setup.config.providers = {
+            ...setup.config.providers,
+            [id]: {
+              ...setup.config.providers?.[id],
+              ...(key ? { apiKey: key } : {}),
+              ...(baseURL ? { baseURL } : {}),
+            },
+          };
+          pushItem("info", `(${id} connected — loading its models…)`);
+          void openModelPicker().catch((err) =>
+            pushItem("error", err instanceof Error ? err.message : String(err)),
+          );
+        })
+        .catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
+    },
+    [setup, pushItem, openModelPicker],
+  );
+
   const handleCommand = useCallback(
     async (line: string): Promise<void> => {
       const [cmd, ...rest] = line.split(/\s+/);
@@ -472,16 +501,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         case "/connect": {
           const [prov, key] = arg.split(/\s+/);
           if (prov && key) {
-            await persistProviderKey(prov, key);
-            setup.config.providers = {
-              ...setup.config.providers,
-              [prov]: { ...setup.config.providers?.[prov], apiKey: key },
-            };
-            pushItem("info", `(${prov} key saved — loading its models…)`);
-            await openModelPicker();
+            saveConnection(prov, key, catalogEntry(prov)?.baseURL);
             return;
           }
-          setConnectPicker(true);
+          setConnect({ step: "pick" });
           return;
         }
         case "/plan": {
@@ -550,7 +573,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
       }
     },
-    [setup, pushItem, exit, resumeSession, runTurn, openModelPicker],
+    [setup, pushItem, exit, resumeSession, runTurn, openModelPicker, saveConnection],
   );
 
   // A failing command must never take down the TUI (or vanish silently).
@@ -656,8 +679,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     !sessionPicker &&
     !question &&
     !helpMenu &&
-    !connectPicker &&
-    !connectFor;
+    !connect;
 
   const allCommands = [
     ...SLASH_COMMANDS,
@@ -853,52 +875,102 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
-      {connectPicker && !connectFor ? (
+      {connect?.step === "pick" ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Connect a provider — pick one, then paste its API key</Text>
-          <SelectList
+          <Text color="cyan">Connect a provider — type to filter, Enter to pick, Esc to cancel</Text>
+          <FilterSelect
             active={true}
             items={[
-              ...Object.entries(PROVIDERS)
-                .filter(([, m]) => m.needsKey)
-                .map(([id, m]) => ({ label: m.name, value: id })),
-              { label: "cancel", value: "__cancel__" },
+              ...PROVIDER_CATALOG.map((e) => ({
+                label: `${e.name}${resolveApiKey(e.id, setup.config) ? "  ✓ connected" : ""}`,
+                value: e.id,
+              })),
+              { label: "Custom OpenAI-compatible endpoint…", value: "__custom__" },
             ]}
-            onSelect={(p) => {
-              setConnectPicker(false);
-              if (p !== "__cancel__") setConnectFor(p);
+            onCancel={() => setConnect(null)}
+            onSelect={(v) => {
+              if (v === "__custom__") {
+                setConnect({ step: "custom-name" });
+                return;
+              }
+              const entry = catalogEntry(v);
+              if (!entry) return setConnect(null);
+              if (!entry.needsKey) {
+                setConnect(null);
+                saveConnection(entry.id, "", entry.baseURL);
+                return;
+              }
+              setConnect({
+                step: "key",
+                id: entry.id,
+                label: entry.name,
+                ...(entry.baseURL ? { baseURL: entry.baseURL } : {}),
+              });
             }}
           />
         </Box>
       ) : null}
 
-      {connectFor ? (
+      {connect?.step === "key" ? (
         <Box borderStyle="round" borderColor="cyan" paddingX={1}>
           <LineInput
-            prompt={`${connectFor} API key (Enter empty to cancel): `}
+            prompt={`${connect.label} API key (Enter empty to cancel): `}
             active={true}
             onSubmit={(raw) => {
               const key = raw.trim();
-              const prov = connectFor;
-              setConnectFor(null);
-              if (!key || !prov) {
-                pushItem("info", "(connect cancelled)");
-                return;
+              const { id, baseURL } = connect;
+              setConnect(null);
+              if (!key) return pushItem("info", "(connect cancelled)");
+              saveConnection(id, key, baseURL);
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {connect?.step === "custom-name" ? (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <LineInput
+            prompt="provider name, lowercase (Enter empty to cancel): "
+            active={true}
+            onSubmit={(raw) => {
+              const id = raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+              if (!id) {
+                setConnect(null);
+                return pushItem("info", "(connect cancelled)");
               }
-              void persistProviderKey(prov, key)
-                .then(() => {
-                  setup.config.providers = {
-                    ...setup.config.providers,
-                    [prov]: { ...setup.config.providers?.[prov], apiKey: key },
-                  };
-                  pushItem("info", `(${prov} key saved — loading its models…)`);
-                  // Straight into the picker: shows what the key unlocks, and a
-                  // bad key surfaces immediately as a discovery warning.
-                  void openModelPicker().catch((err) =>
-                    pushItem("error", err instanceof Error ? err.message : String(err)),
-                  );
-                })
-                .catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
+              setConnect({ step: "custom-url", id });
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {connect?.step === "custom-url" ? (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <LineInput
+            prompt={`base URL for ${connect.id} (e.g. https://host/v1): `}
+            active={true}
+            onSubmit={(raw) => {
+              const baseURL = raw.trim();
+              const { id } = connect;
+              if (!/^https?:\/\//.test(baseURL)) {
+                setConnect(null);
+                return pushItem("info", "(connect cancelled — base URL must start with http)");
+              }
+              setConnect({ step: "custom-key", id, baseURL });
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {connect?.step === "custom-key" ? (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <LineInput
+            prompt={`${connect.id} API key (Enter empty if none, e.g. local): `}
+            active={true}
+            onSubmit={(raw) => {
+              const { id, baseURL } = connect;
+              setConnect(null);
+              saveConnection(id, raw.trim(), baseURL);
             }}
           />
         </Box>
