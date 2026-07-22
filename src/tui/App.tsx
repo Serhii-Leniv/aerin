@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -540,6 +540,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
 
+  // Transcript alignment: content flows from the top (Claude Code-style) while
+  // it fits; once it outgrows the viewport it bottom-aligns so the newest line
+  // stays visible above the input and old lines clip at the top.
+  const viewportRef = useRef<DOMElement | null>(null);
+  const contentRef = useRef<DOMElement | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const v = viewportRef.current ? measureElement(viewportRef.current).height : 0;
+    const c = contentRef.current ? measureElement(contentRef.current).height : 0;
+    const next = v > 0 && c > v;
+    setOverflowing((prev) => (prev === next ? prev : next));
+  });
+
   return (
     <Box flexDirection="column" height={size.rows} width={size.columns}>
       {/* Pinned header */}
@@ -567,9 +580,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Text>
       </Box>
 
-      {/* Transcript viewport: newest content sticks to the bottom, older
-          lines clip away at the top. */}
-      <Box flexDirection="column" flexGrow={1} overflowY="hidden" justifyContent="flex-end">
+      {/* Transcript viewport: top-aligned while content fits; once it
+          overflows, newest content sticks to the bottom and old lines clip
+          away at the top. */}
+      <Box
+        ref={viewportRef}
+        flexDirection="column"
+        flexGrow={1}
+        overflowY="hidden"
+        justifyContent={overflowing ? "flex-end" : "flex-start"}
+      >
+        <Box ref={contentRef} flexDirection="column" flexShrink={0}>
         {items.slice(-VIEWPORT_ITEMS).map((item) => (
           <Box
             key={item.key}
@@ -626,6 +647,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
         </Box>
       ) : null}
+        </Box>
       </Box>
 
       {/* Bottom section: dialogs, input, status — pinned by layout. */}
