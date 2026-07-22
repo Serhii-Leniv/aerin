@@ -189,6 +189,17 @@ export interface SelectItem {
 
 const FILTER_VISIBLE_ROWS = 14;
 
+/** Substring match, falling back to in-order subsequence ("gpt4m" → "gpt-4o-mini"). */
+function fuzzyMatch(query: string, label: string): boolean {
+  if (label.includes(query)) return true;
+  let i = 0;
+  for (const ch of label) {
+    if (ch === query[i]) i++;
+    if (i === query.length) return true;
+  }
+  return i === query.length;
+}
+
 /**
  * Filterable select with section headers: type to narrow, arrows move over
  * selectable rows only, Enter picks, Esc cancels. Headers survive filtering
@@ -214,12 +225,12 @@ export function FilterSelect(props: {
       for (let j = i + 1; j < props.items.length; j++) {
         const child = props.items[j];
         if (!child || child.header) break;
-        if (!q || child.label.toLowerCase().includes(q)) {
+        if (!q || fuzzyMatch(q, child.label.toLowerCase())) {
           rows.push(it);
           break;
         }
       }
-    } else if (!q || it.label.toLowerCase().includes(q)) {
+    } else if (!q || fuzzyMatch(q, it.label.toLowerCase())) {
       rows.push(it);
     }
   }

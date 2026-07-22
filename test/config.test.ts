@@ -56,6 +56,19 @@ describe("config", () => {
   });
 });
 
+describe("persistModelChoice", () => {
+  test("sets model and maintains a deduped, capped recent list", async () => {
+    const { persistModelChoice, configSchema } = await import("../src/config/config.js");
+    const file = path.join(await tmpCwd(), "config.json");
+    for (const id of ["a/1", "b/2", "a/1", "c/3", "d/4", "e/5", "f/6"]) {
+      await persistModelChoice(id, file);
+    }
+    const raw = JSON.parse(await fs.readFile(file, "utf8"));
+    expect(configSchema.parse(raw).model).toBe("f/6");
+    expect(raw.recentModels).toEqual(["f/6", "e/5", "d/4", "c/3", "a/1"]);
+  });
+});
+
 describe("providersWithKeys", () => {
   function withoutProviderEnv<T>(fn: () => T): T {
     const saved = new Map<string, string | undefined>();

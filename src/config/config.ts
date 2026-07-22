@@ -24,6 +24,8 @@ export const configSchema = z.object({
   model: z.string().optional(),
   /** Optional cheaper model for the agent (sub-agent) tool, e.g. "anthropic/claude-haiku-4-5". */
   subagentModel: z.string().optional(),
+  /** Maintained automatically: last models picked with /model, newest first. */
+  recentModels: z.array(z.string()).optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z.object({ allow: z.array(z.string()).default([]) }).optional(),
@@ -59,6 +61,7 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
   const config: AerinConfig = {
     model: projectConfig.model ?? globalConfig.model,
     subagentModel: projectConfig.subagentModel ?? globalConfig.subagentModel,
+    recentModels: globalConfig.recentModels,
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },
     permissions: {
@@ -69,6 +72,20 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     },
   };
   return { config, globalConfig, projectConfig };
+}
+
+/**
+ * Remember an interactively chosen model: becomes the default for the next
+ * session and heads the picker's Recent section. Global config only — an
+ * explicit -m flag or project setting still wins for one-off runs.
+ */
+export async function persistModelChoice(modelId: string, file: string = GLOBAL_CONFIG_FILE): Promise<void> {
+  const raw = ((await readJsonIfExists(file)) ?? {}) as Record<string, unknown>;
+  raw["model"] = modelId;
+  const recent = Array.isArray(raw["recentModels"]) ? (raw["recentModels"] as string[]) : [];
+  raw["recentModels"] = [modelId, ...recent.filter((m) => m !== modelId)].slice(0, 5);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(raw, null, 2) + "\n", "utf8");
 }
 
 /** Append a permission rule to the project settings file. */

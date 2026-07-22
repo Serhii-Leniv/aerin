@@ -3,7 +3,7 @@ import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
-import type { AerinConfig } from "../config/config.js";
+import { persistModelChoice, type AerinConfig } from "../config/config.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
 import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
@@ -55,11 +55,28 @@ interface TranscriptItem {
 /** Only this many trailing items are rendered — everything above is clipped anyway. */
 const VIEWPORT_ITEMS = 150;
 
-/** Grouped picker rows: one header per provider, models beneath it. */
-function buildPickerItems(models: DiscoveredModel[]): { label: string; value: string; header?: boolean }[] {
+/** Picker rows: a Recent section first (opencode-style), then one group per provider. */
+function buildPickerItems(
+  models: DiscoveredModel[],
+  recent: readonly string[],
+  currentId: string,
+): { label: string; value: string; header?: boolean }[] {
   const items: { label: string; value: string; header?: boolean }[] = [];
+  const mark = (id: string): string => (id === currentId ? "  ✓ current" : "");
+
+  const recentShown = recent.filter((id) => id === currentId || models.some((m) => m.id === id));
+  if (recentShown.length > 0) {
+    items.push({ label: "Recent", value: "__header_recent", header: true });
+    for (const id of recentShown) {
+      const m = models.find((mm) => mm.id === id);
+      items.push({ label: (m ? formatModelLabel(m) : id) + mark(id), value: id });
+    }
+  }
+
+  const inRecent = new Set(recentShown);
   let lastProvider = "";
   for (const m of models) {
+    if (inRecent.has(m.id)) continue; // already shown under Recent
     if (m.provider !== lastProvider) {
       lastProvider = m.provider;
       items.push({
@@ -68,7 +85,7 @@ function buildPickerItems(models: DiscoveredModel[]): { label: string; value: st
         header: true,
       });
     }
-    items.push({ label: formatModelLabel(m, { stripProvider: true }), value: m.id });
+    items.push({ label: formatModelLabel(m, { stripProvider: true }) + mark(m.id), value: m.id });
   }
   return items;
 }
@@ -163,6 +180,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
+  const [recentModels, setRecentModels] = useState<string[]>(setup.config.recentModels ?? []);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
   const [reasoningTail, setReasoningTail] = useState("");
@@ -458,6 +476,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         const model = setup.resolveModelFn(id);
         setup.agent.setModel(model, id);
         setModelId(id);
+        setRecentModels((prev) => [id, ...prev.filter((m) => m !== id)].slice(0, 5));
+        void persistModelChoice(id).catch(() => {}); // sticky across sessions; best effort
         pushItem("info", `Model switched to ${id}`);
       } catch (err) {
         pushItem("error", err instanceof Error ? err.message : String(err));
@@ -747,7 +767,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color="cyan">Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            items={buildPickerItems(modelPicker)}
+            items={buildPickerItems(modelPicker, recentModels, modelId)}
             onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
               setModelPicker(null);

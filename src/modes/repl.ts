@@ -7,6 +7,7 @@ import { relativeTime } from "../terminal/format.js";
 import { discoverModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
+import { persistModelChoice } from "../config/config.js";
 
 interface ReplFlags {
   model?: string;
@@ -201,6 +202,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         const id = line.slice("/model ".length).trim();
         try {
           setup.agent.setModel(resolveModel(id, setup.config), id);
+          await persistModelChoice(id).catch(() => {});
           stdout.write(`  model switched to ${id}\n`);
         } catch (err) {
           stdout.write(`  ${err instanceof Error ? err.message : err}\n`);
