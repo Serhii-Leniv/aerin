@@ -5,6 +5,7 @@ import type { OnPermission } from "./core/events.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
 import { builtinTools } from "./tools/index.js";
 import { createAgentTool } from "./tools/agent-tool.js";
+import { createQuestionTool, type AskUser } from "./tools/question-tool.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
 import { resolveModel, providersWithKeys } from "./providers/registry.js";
@@ -35,6 +36,8 @@ export interface AgentSetup {
   modelId: string;
   cwd: string;
   config: import("./config/config.js").AerinConfig;
+  /** Exposed so frontends can toggle plan mode. */
+  policy: PermissionPolicy;
   /** Set when no model could be resolved; the agent holds an inert stub that
    *  makes no requests until the user picks a model with /model. */
   modelUnavailable?: string;
@@ -79,6 +82,7 @@ Check your setup with: aerin doctor`);
 export async function setupAgent(
   flags: Pick<CliFlags, "model" | "yolo" | "continue" | "resume" | "allowOutsideCwd" | "cwd" | "mcp">,
   onPermission: OnPermission,
+  onQuestion?: AskUser,
 ): Promise<AgentSetup> {
   const cwd = flags.cwd ?? process.cwd();
   const { config } = await loadConfig(cwd);
@@ -165,6 +169,7 @@ export async function setupAgent(
         : {}),
     }),
   );
+  agent.registerTool(createQuestionTool({ ...(onQuestion ? { ask: onQuestion } : {}) }));
 
   return {
     agent,
@@ -173,6 +178,7 @@ export async function setupAgent(
     modelId,
     cwd,
     config,
+    policy,
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
   };
 }

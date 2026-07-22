@@ -29,6 +29,7 @@ export type AgentEvent =
       costUsd: number | undefined;
     }
   | { type: "compaction"; preTokens: number }
+  | { type: "todo-update"; items: { text: string; status: "pending" | "active" | "done" }[] }
   | { type: "turn-end" }
   | { type: "error"; message: string };
 

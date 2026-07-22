@@ -9,6 +9,9 @@ import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
+import type { AskUser } from "../tools/question-tool.js";
+import type { TodoItem } from "../tools/todo-tool.js";
+import type { PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { relativeTime } from "../terminal/format.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -19,8 +22,10 @@ export interface TuiSetup {
   modelId: string;
   cwd: string;
   warnings: string[];
-  /** Swappable so the dialog can be wired after agent construction. */
+  /** Swappable so the dialogs can be wired after agent construction. */
   onPermissionRef: { current: OnPermission };
+  onQuestionRef: { current: AskUser };
+  policy: PermissionPolicy;
   resolveModelFn: (id: string) => LanguageModel;
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
@@ -65,11 +70,12 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
-const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /resume /exit
+const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /resume /plan /exit
 Esc interrupts a running turn. Ctrl+C twice exits.`;
 
 const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
+  { name: "/plan", description: "toggle plan mode — read-only exploration, agent presents a plan" },
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
@@ -124,6 +130,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [denyReasonMode, setDenyReasonMode] = useState(false);
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [question, setQuestion] = useState<{
+    q: string;
+    options: string[];
+    resolve: (answer: string) => void;
+  } | null>(null);
+  const [questionOther, setQuestionOther] = useState(false);
+  const [planMode, setPlanMode] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -146,10 +160,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
   }, []);
 
-  // Wire the agent's permission callback to the dialog.
+  // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {
     setup.onPermissionRef.current = (req) =>
       new Promise<PermissionDecision>((resolve) => setPermission({ req, resolve }));
+    setup.onQuestionRef.current = (q, options) =>
+      new Promise<string>((resolve) => setQuestion({ q, options, resolve }));
   }, [setup]);
 
   const flushStream = useCallback(() => {
@@ -208,6 +224,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             case "compaction":
               pushItem("info", `[compacting context — was ${event.preTokens} tokens]`);
               break;
+            case "todo-update":
+              setTodos(event.items);
+              break;
             case "subagent-update": {
               if (event.status === "running") {
                 setSubagents((m) =>
@@ -258,7 +277,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         setThinking(false);
         setReasoningTail("");
         reasoningBuf.current = "";
-        setPermission(null);
+        settleDialogs();
         setSubagents(new Map()); // clear stragglers on abort/error
       }
     },
@@ -318,6 +337,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
           setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
           setCtxTokens(0);
+          setTodos([]);
+          return;
+        }
+        case "/plan": {
+          const next = !setup.policy.inPlanMode;
+          setup.policy.setPlanMode(next);
+          setPlanMode(next);
+          pushItem(
+            "info",
+            next
+              ? "(plan mode ON — write/execute tools are denied; the agent will explore and present a plan)"
+              : "(plan mode OFF — the agent can make changes again)",
+          );
           return;
         }
         case "/compact": {
@@ -424,14 +456,30 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     [runCommand, runTurn],
   );
 
+  // A pending dialog blocks the agent loop on an unresolved promise — resolve
+  // it before aborting or the turn can never finish.
+  const settleDialogs = useCallback(() => {
+    setPermission((prev) => {
+      prev?.resolve({ kind: "deny", reason: "Interrupted." });
+      return null;
+    });
+    setQuestion((prev) => {
+      prev?.resolve("");
+      return null;
+    });
+    setQuestionOther(false);
+  }, []);
+
   // Global keys: Esc interrupts; double Ctrl+C exits.
   useInput((input, key) => {
     if (key.escape && workingRef.current) {
+      settleDialogs();
       setup.agent.abort();
       return;
     }
     if (key.ctrl && input === "c") {
       if (workingRef.current) {
+        settleDialogs();
         setup.agent.abort();
         return;
       }
@@ -458,7 +506,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inputActive = !working && !permission && !modelPicker && !sessionPicker;
+  const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
 
   return (
     <Box flexDirection="column">
@@ -529,7 +577,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           ))}
         </Box>
       ) : null}
-      {working && !permission ? (
+      {todos.length > 0 ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1} alignSelf="flex-start">
+          {todos.map((t, i) => (
+            <Text key={i} color={t.status === "done" ? "green" : t.status === "active" ? "cyan" : "gray"}>
+              {t.status === "done" ? "☑" : t.status === "active" ? "▸" : "☐"} {t.text}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
+      {working && !permission && !question ? (
         <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
       ) : null}
 
@@ -568,6 +625,41 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               permission.resolve({ kind: "deny", ...(reason.trim() ? { reason: reason.trim() } : {}) });
               setPermission(null);
               setDenyReasonMode(false);
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {question && !questionOther ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Text color="cyan">? {question.q}</Text>
+          <SelectList
+            active={true}
+            items={[
+              ...question.options.map((o) => ({ label: o, value: o })),
+              { label: "✎ type a different answer", value: "__other__" },
+            ]}
+            onSelect={(v) => {
+              if (v === "__other__") {
+                setQuestionOther(true);
+              } else {
+                question.resolve(v);
+                setQuestion(null);
+              }
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {question && questionOther ? (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <LineInput
+            prompt="answer: "
+            active={true}
+            onSubmit={(answer) => {
+              question.resolve(answer.trim());
+              setQuestion(null);
+              setQuestionOther(false);
             }}
           />
         </Box>
@@ -633,6 +725,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {" · "}
           {fmtTokens(stats.inTok)} in / {fmtTokens(stats.outTok)} out
           {stats.cost > 0 ? ` · ~$${stats.cost.toFixed(4)}` : ""}
+          {planMode ? " · PLAN (read-only)" : ""}
           {exitArmed ? " · press Ctrl+C again to exit" : ""}
         </Text>
       </Box>

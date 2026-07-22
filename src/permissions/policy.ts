@@ -12,7 +12,7 @@ import type { PermissionTier } from "../tools/types.js";
  * and stays auditable.
  */
 
-export type Decision = "allow" | "ask";
+export type Decision = "allow" | "ask" | "deny";
 
 export interface RuleTarget {
   tool: string;
@@ -45,14 +45,25 @@ function escapeRegExp(s: string): string {
 
 export class PermissionPolicy {
   private sessionRules: string[] = [];
+  private planMode = false;
 
   constructor(
     private projectRules: string[],
     private yolo: boolean,
   ) {}
 
+  /** Plan mode: read-only exploration; write/execute tools are denied outright. */
+  setPlanMode(on: boolean): void {
+    this.planMode = on;
+  }
+
+  get inPlanMode(): boolean {
+    return this.planMode;
+  }
+
   decide(tier: PermissionTier, t: RuleTarget): Decision {
     if (tier === "read") return "allow";
+    if (this.planMode) return "deny";
     if (this.yolo) return "allow";
     const rules = [...this.projectRules, ...this.sessionRules];
     return rules.some((r) => ruleMatches(r, t)) ? "allow" : "ask";

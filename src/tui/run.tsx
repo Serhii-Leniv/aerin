@@ -1,6 +1,7 @@
 import React from "react";
 import { render } from "ink";
 import { setupAgent, stopMcpServers } from "../cli.js";
+import type { AskUser } from "../tools/question-tool.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -17,12 +18,21 @@ interface TuiFlags {
 
 export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<void> {
   // The Agent needs onPermission at construction, but the dialog only exists
-  // once the App mounts — so route through a swappable ref.
+  // once the App mounts — so route through swappable refs.
   const onPermissionRef: { current: OnPermission } = {
     current: async () => ({ kind: "deny", reason: "UI not ready" }),
   };
+  const onQuestionRef: { current: AskUser } = {
+    current: async () => {
+      throw new Error("UI not ready");
+    },
+  };
 
-  const setup = await setupAgent(flags, (req) => onPermissionRef.current(req));
+  const setup = await setupAgent(
+    flags,
+    (req) => onPermissionRef.current(req),
+    (q, options) => onQuestionRef.current(q, options),
+  );
 
   const tuiSetup: TuiSetup = {
     agent: setup.agent,
@@ -30,6 +40,8 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     cwd: setup.cwd,
     warnings: setup.warnings,
     onPermissionRef,
+    onQuestionRef,
+    policy: setup.policy,
     resolveModelFn: (id) => resolveModel(id, setup.config),
     config: setup.config,
     ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),

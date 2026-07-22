@@ -262,7 +262,16 @@ export class Agent {
     yield { type: "tool-call", id: call.toolCallId, name: call.toolName, input, summary };
 
     const target = targetFor(call.toolName, input);
-    if (this.opts.policy.decide(def.permission, target) === "ask") {
+    const policyDecision = this.opts.policy.decide(def.permission, target);
+    if (policyDecision === "deny") {
+      return {
+        output:
+          "Plan mode is active: only read-only tools are allowed. Investigate with read/grep/glob/agent, " +
+          "then present a numbered step-by-step plan and stop — the user approves by turning plan mode off (/plan).",
+        isError: true,
+      };
+    }
+    if (policyDecision === "ask") {
       yield { type: "permission-request", id: call.toolCallId, name: call.toolName, summary };
       const preview = def.preview ? await def.preview(input, ctx).catch(() => undefined) : undefined;
       const decision = await this.opts.onPermission({

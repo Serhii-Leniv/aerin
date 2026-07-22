@@ -25,6 +25,7 @@ const HELP = `Commands:
   /models       list models available from your providers
   /model <id>   switch model (any provider/model-id)
   /resume       list previous conversations; /resume <number> to pick one
+  /plan         toggle plan mode (read-only exploration, agent presents a plan)
   /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
 
@@ -44,7 +45,15 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     return { kind: "deny", ...(reason ? { reason } : {}) };
   };
 
-  const setup = await setupAgent(flags, askPermission);
+  const askQuestion = async (question: string, options: string[]): Promise<string> => {
+    stdout.write(`\n  ? ${question}\n`);
+    options.forEach((o, i) => stdout.write(`    ${i + 1}. ${o}\n`));
+    const answer = (await rl.question("  answer (number or free text): ")).trim();
+    const n = Number(answer);
+    return Number.isInteger(n) && options[n - 1] ? (options[n - 1] as string) : answer;
+  };
+
+  const setup = await setupAgent(flags, askPermission, askQuestion);
   rl = readline.createInterface({ input: stdin, output: stdout });
   for (const w of setup.warnings) stderr.write(`warning: ${w}\n`);
   const { VERSION } = await import("../version.js");
@@ -93,6 +102,11 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
             break;
           case "usage":
             break;
+          case "todo-update":
+            for (const t of event.items) {
+              stdout.write(`  ${t.status === "done" ? "[x]" : t.status === "active" ? "[>]" : "[ ]"} ${t.text}\n`);
+            }
+            break;
           case "error":
             stdout.write(`\n  error: ${event.message}\n`);
             break;
@@ -120,6 +134,12 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       if (line === "/exit" || line === "/quit") return "quit";
       if (line === "/help") {
         stdout.write(HELP + "\n");
+        return undefined;
+      }
+      if (line === "/plan") {
+        const next = !setup.policy.inPlanMode;
+        setup.policy.setPlanMode(next);
+        stdout.write(next ? "  (plan mode ON — read-only)\n" : "  (plan mode OFF)\n");
         return undefined;
       }
       if (line === "/clear") {

@@ -6,3 +6,6 @@
 - Windows is a first-class target: normalize CRLF before string matching (see `applyEdit`), spawn with `windowsHide: true`, never build `cmd /c` command strings.
 - Tests: `bun test`. Typecheck: `bun run typecheck`. Build: `bun run build` (shebang must stay the first line of `dist/index.js`).
 - Keep dependencies lean — `npx aerin` cold-start matters. No packages with native postinstall steps.
+
+## Memory
+- test suite runs with bun test
