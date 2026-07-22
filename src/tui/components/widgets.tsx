@@ -23,6 +23,8 @@ export function LineInput(props: {
   commands?: readonly CommandSuggestion[];
   /** Workspace file paths for @-mention completion. */
   files?: readonly string[];
+  /** Dim hint shown while the input is empty. */
+  placeholder?: string;
 }): React.ReactElement {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -180,6 +182,11 @@ export function LineInput(props: {
         <Text>{before}</Text>
         {props.active ? <Text inverse>{at}</Text> : <Text>{at}</Text>}
         <Text>{after}</Text>
+        {!value && props.placeholder ? (
+          <Text color="gray" dimColor>
+            {props.placeholder}
+          </Text>
+        ) : null}
       </Box>
       {matches.map((m, i) => (
         <Text key={m.name} color={i === cSugg ? "cyan" : "gray"}>
@@ -201,15 +208,17 @@ export function LineInput(props: {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-export function Spinner(props: { label: string }): React.ReactElement {
+export function Spinner(props: { label: string; since?: number }): React.ReactElement {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 80);
+    const t = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 120);
     return () => clearInterval(t);
   }, []);
+  const elapsed = props.since ? Math.floor((Date.now() - props.since) / 1000) : 0;
   return (
     <Text color="gray">
-      {SPINNER_FRAMES[frame]} {props.label}
+      <Text color="cyan">{SPINNER_FRAMES[frame]}</Text> {props.label}
+      {elapsed > 0 ? ` · ${elapsed}s` : ""}
     </Text>
   );
 }

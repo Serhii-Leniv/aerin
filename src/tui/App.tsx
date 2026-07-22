@@ -148,6 +148,14 @@ function resultStat(output: string, isError: boolean): string {
   return `${lines.length} lines`;
 }
 
+/** "~" for home, middle-ellipsis for long paths — keeps the header tidy. */
+function shortenPath(p: string, max = 45): string {
+  const home = process.env["USERPROFILE"] ?? process.env["HOME"] ?? "";
+  let out = home && p.startsWith(home) ? "~" + p.slice(home.length) : p;
+  if (out.length > max) out = out.slice(0, Math.floor(max / 2) - 1) + "…" + out.slice(-Math.floor(max / 2));
+  return out;
+}
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1e3).toFixed(n >= 100_000 ? 0 : 1)}k`;
@@ -214,6 +222,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const streamBuf = useRef("");
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workingRef = useRef(false);
+  const turnStartRef = useRef(0);
 
   const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
     setScrollOffset(0); // new content — snap back to following the bottom
@@ -295,6 +304,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const runTurn = useCallback(
     async (prompt: string, display?: string) => {
       workingRef.current = true;
+      turnStartRef.current = Date.now();
       setWorking(true);
       pushItem("user", display ?? prompt);
       // @path tokens attach the named files to the prompt (display stays clean).
@@ -765,15 +775,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   return (
     <Box flexDirection="column" height={usableRows} width={size.columns}>
-      {/* Pinned header */}
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={2}
-        alignSelf="flex-start"
-        flexShrink={0}
-      >
+      {/* Pinned header — compact, no border box, divider underneath */}
+      <Box flexDirection="column" flexShrink={0} paddingX={1}>
         {showLogo ? (
           LOGO.map((row, i) => (
             <Text key={i} bold color={LOGO_COLORS[i] ?? "cyan"}>
@@ -785,8 +788,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             ✦ Aerin
           </Text>
         )}
-        <Text color="gray">
-          v{VERSION} · {modelId} · {setup.cwd}
+        <Text>
+          <Text color="gray" dimColor>
+            v{VERSION}
+          </Text>
+          <Text color="gray"> · </Text>
+          <Text color="cyan">{modelId}</Text>
+          <Text color="gray"> · {shortenPath(setup.cwd)}</Text>
+        </Text>
+        <Text color="gray" dimColor>
+          {"─".repeat(Math.max(10, size.columns - 2))}
         </Text>
       </Box>
 
@@ -820,7 +831,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                       : undefined
               }
             >
-              {item.kind === "user" ? `> ${item.text}` : item.text}
+              {item.kind === "user" ? `❯ ${item.text}` : item.text}
             </Text>
           </Box>
         ))}
@@ -856,7 +867,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
       {working && !permission && !question ? (
         <Box flexShrink={0}>
-          <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
+          <Spinner
+            label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"}
+            since={turnStartRef.current}
+          />
         </Box>
       ) : null}
         </Box>
@@ -1099,31 +1113,52 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {inputActive ? (
-        <Box borderStyle="round" borderColor="gray" paddingX={1}>
+        <Box
+          borderStyle="round"
+          borderColor={planMode ? "magenta" : working ? "yellow" : "cyan"}
+          paddingX={1}
+        >
           <LineInput
-            prompt="> "
+            prompt="❯ "
             active={inputActive}
             onSubmit={onSubmit}
             history={inputHistory}
             commands={allCommands}
             files={workspaceFiles}
+            placeholder={
+              working
+                ? "type your next message — it sends when this turn finishes"
+                : "ask anything · @file to attach · / for commands"
+            }
           />
         </Box>
       ) : null}
 
-      <Box>
-        <Text color="gray">
-          {modelId}
-          {ctxTokens > 0
-            ? ` · ctx ${fmtTokens(ctxTokens)}/${fmtTokens(modelInfo(modelId).contextWindow)} (${Math.round((ctxTokens / modelInfo(modelId).contextWindow) * 100)}%)`
-            : ""}
-          {" · "}
-          {fmtTokens(stats.inTok)} in / {fmtTokens(stats.outTok)} out
-          {stats.cost > 0 ? ` · ~$${stats.cost.toFixed(4)}` : ""}
-          {planMode ? " · PLAN (read-only)" : ""}
-          {queued.length > 0 ? ` · ${queued.length} queued` : ""}
-          {scrollOffset > 0 ? ` · ↑ scrolled (PgDn to follow)` : ""}
-          {exitArmed ? " · press Ctrl+C again to exit" : ""}
+      <Box paddingX={1}>
+        <Text>
+          <Text color="cyan">{modelId.split("/").slice(-1)[0]}</Text>
+          {ctxTokens > 0 ? (
+            <Text
+              color={
+                ctxTokens / modelInfo(modelId).contextWindow > 0.8
+                  ? "red"
+                  : ctxTokens / modelInfo(modelId).contextWindow > 0.5
+                    ? "yellow"
+                    : "gray"
+              }
+            >
+              {` · ctx ${Math.round((ctxTokens / modelInfo(modelId).contextWindow) * 100)}%`}
+            </Text>
+          ) : null}
+          <Text color="gray">
+            {" · "}
+            {fmtTokens(stats.inTok)}↑ {fmtTokens(stats.outTok)}↓
+            {stats.cost > 0 ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}` : ""}
+          </Text>
+          {planMode ? <Text color="magenta"> · PLAN</Text> : null}
+          {queued.length > 0 ? <Text color="yellow"> · {queued.length} queued</Text> : null}
+          {scrollOffset > 0 ? <Text color="yellow"> · ↑ scrolled (PgDn)</Text> : null}
+          {exitArmed ? <Text color="red"> · Ctrl+C again to exit</Text> : null}
         </Text>
       </Box>
       </Box>
