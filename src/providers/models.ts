@@ -1,7 +1,7 @@
 /**
- * Static model metadata for context-window management and cost display.
- * Prices are USD per million tokens and are approximate — verify against
- * each provider's pricing page. Unknown models fall back to DEFAULT_MODEL_INFO.
+ * Model metadata for context-window management and cost display.
+ * Prices are USD per million tokens, sourced exclusively at runtime from
+ * live registries (models.dev, provider list APIs) — never hardcoded.
  */
 
 export interface ModelInfo {
@@ -16,40 +16,27 @@ export const DEFAULT_MODEL_INFO: ModelInfo = {
   maxOutput: 8_192,
 };
 
-export const MODEL_TABLE: Record<string, ModelInfo> = {
-  // Anthropic (verified 2026-07)
-  "anthropic/claude-opus-4-8": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 5, outputPerMTok: 25 },
-  "anthropic/claude-opus-4-7": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 5, outputPerMTok: 25 },
-  "anthropic/claude-sonnet-5": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 3, outputPerMTok: 15 },
-  "anthropic/claude-sonnet-4-6": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 3, outputPerMTok: 15 },
-  "anthropic/claude-haiku-4-5": { contextWindow: 200_000, maxOutput: 64_000, inputPerMTok: 1, outputPerMTok: 5 },
-  // OpenAI / Google / OpenRouter / Ollama entries are best-effort; extend as needed.
-  "openai/gpt-4.1": { contextWindow: 1_000_000, maxOutput: 32_768 },
-  "openai/gpt-4o": { contextWindow: 128_000, maxOutput: 16_384 },
-  "google/gemini-flash-latest": { contextWindow: 1_000_000, maxOutput: 65_536 },
-  "google/gemini-pro-latest": { contextWindow: 1_000_000, maxOutput: 65_536 },
-  "google/gemini-3-flash-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
-  "google/gemini-3-pro-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
-  // xAI (best effort — verify against x.ai pricing)
-  "xai/grok-4": { contextWindow: 256_000, maxOutput: 64_000, inputPerMTok: 3, outputPerMTok: 15 },
-  "xai/grok-code-fast-1": { contextWindow: 256_000, maxOutput: 32_000, inputPerMTok: 0.2, outputPerMTok: 1.5 },
-};
-
-/** Runtime-registered metadata (e.g. from the models.dev registry). */
+/**
+ * ALL model metadata is runtime-registered from live sources — the models.dev
+ * registry (daily refresh) and provider list APIs. Nothing is hardcoded, so
+ * displayed pricing and context windows can never silently drift from
+ * reality. Unknown models get DEFAULT_MODEL_INFO (conservative) until a live
+ * source fills them in.
+ */
 const DYNAMIC_TABLE: Record<string, ModelInfo> = {};
 
 export function registerModelInfo(modelId: string, info: ModelInfo): void {
   DYNAMIC_TABLE[modelId] = info;
 }
 
-/**
- * Metadata when we actually know the model — no default fallback.
- * The dynamic registry (models.dev, refreshed daily) WINS over the static
- * table: live data stays true when prices change; the static entries are
- * only a fallback for offline runs and models the registry lacks.
- */
+/** Metadata when a live source actually knows the model — no default fallback. */
 export function knownModelInfo(modelId: string): ModelInfo | undefined {
-  return DYNAMIC_TABLE[modelId] ?? MODEL_TABLE[modelId];
+  return DYNAMIC_TABLE[modelId];
+}
+
+/** Everything the live sources have registered, keyed "provider/model-id". */
+export function allKnownModels(): Record<string, ModelInfo> {
+  return { ...DYNAMIC_TABLE };
 }
 
 export function modelInfo(modelId: string): ModelInfo {

@@ -5,7 +5,7 @@ import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
 import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
 import { renderCommand, type CustomCommand } from "../core/commands.js";
-import { MODEL_TABLE, modelInfo } from "../providers/models.js";
+import { allKnownModels, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
 import { PROVIDER_CATALOG, catalogEntry, keyLooksLike } from "../providers/catalog.js";
 import { discoverModels, formatModelLabel, listProviderModels, type DiscoveredModel } from "../providers/list-models.js";
@@ -521,21 +521,29 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       setModelPicker(null);
       pushItem("info", "(no providers connected yet — pick one to connect first)");
       setConnect({ step: "pick" });
-    } else {
-      // No provider reachable — fall back to the known-model metadata table.
-      pushItem(
-        "info",
-        "No provider model lists reachable — showing known models. You can always type /model provider/any-id directly.",
-      );
-      setModelPicker(
-        Object.entries(MODEL_TABLE).map(([id, info]) => ({
+    } else if (Object.keys(allKnownModels()).length > 0) {
+      // Provider lists unreachable (offline?) — fall back to the models.dev
+      // cache for the providers that have keys.
+      const connected = new Set(providersWithKeys(setup.config));
+      const cached = Object.entries(allKnownModels())
+        .filter(([id]) => connected.has(id.split("/")[0] ?? ""))
+        .map(([id, info]) => ({
           id,
           provider: id.split("/")[0] ?? "",
           contextWindow: info.contextWindow,
           ...(info.inputPerMTok !== undefined ? { inputPerMTok: info.inputPerMTok } : {}),
           ...(info.outputPerMTok !== undefined ? { outputPerMTok: info.outputPerMTok } : {}),
-        })),
-      );
+        }));
+      if (cached.length > 0) {
+        pushItem("info", "(provider lists unreachable — showing cached registry data)");
+        setModelPicker(cached);
+      } else {
+        pushItem("error", "No model lists reachable. Type /model provider/model-id directly.");
+        setModelPicker(null);
+      }
+    } else {
+      pushItem("error", "No model lists reachable and no cached registry yet. Type /model provider/model-id directly.");
+      setModelPicker(null);
     }
   }, [setup, pushItem]);
 

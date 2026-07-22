@@ -7,7 +7,7 @@ import { primeModelsDev } from "./modelsdev.js";
 /**
  * Live model discovery: query each provider's models endpoint for whatever
  * the user's key can actually access. Nothing is hardcoded — the static
- * MODEL_TABLE is only pricing/context metadata for models we recognize.
+ * models.dev registry supplies pricing/context metadata for models we recognize.
  * Providers without a configured key are skipped; failures degrade to
  * warnings, never crashes.
  */
