@@ -32,10 +32,13 @@ describe("enrichProviderError", () => {
     expect(enrichProviderError("openrouter/x", "insufficient credits")).toContain("billing");
   });
 
-  test("tool-calling-unsupported gets a pick-another-model hint", () => {
+  test("tool/chat-unsupported models get a pick-another-model hint", () => {
     expect(enrichProviderError("groq/groq/compound", "`tool calling` is not supported with this model")).toContain(
-      "cannot drive tools",
+      "pick a tool-capable chat model",
     );
+    expect(
+      enrichProviderError("groq/whisper-large-v3", "The model `whisper-large-v3` does not support chat completions"),
+    ).toContain("pick a tool-capable chat model");
   });
 
   test("unknown errors still carry the model context", () => {

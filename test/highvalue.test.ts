@@ -179,6 +179,30 @@ describe("hooks", () => {
   });
 });
 
+describe("models.dev capability registration", () => {
+  test("tool_call:false registers even without pricing, and filters apply", async () => {
+    const { registerFromRegistry } = await import("../src/providers/modelsdev.js");
+    const { knownModelInfo } = await import("../src/providers/models.js");
+    const count = registerFromRegistry(
+      {
+        testprov: {
+          models: {
+            "whisper-x": { tool_call: false, limit: { context: 0, output: 0 } },
+            "llama-x": { tool_call: true, cost: { input: 1, output: 2 }, limit: { context: 1000, output: 100 } },
+            "empty-x": {}, // nothing known — skipped
+          },
+        },
+      },
+      ["testprov"],
+    );
+    expect(count).toBe(2);
+    expect(knownModelInfo("testprov/whisper-x")?.toolCall).toBe(false);
+    expect(knownModelInfo("testprov/llama-x")?.toolCall).toBe(true);
+    expect(knownModelInfo("testprov/llama-x")?.inputPerMTok).toBe(1);
+    expect(knownModelInfo("testprov/empty-x")).toBeUndefined();
+  });
+});
+
 describe("models.dev provider catalog", () => {
   test("parses only openai-compatible entries with endpoints", async () => {
     const { parseProviderCatalog } = await import("../src/providers/modelsdev.js");

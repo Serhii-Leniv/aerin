@@ -52,8 +52,8 @@ export function enrichProviderError(modelId: string, message: string): string {
     hint = ` — ${provider} quota or billing limit; try another model (/model)`;
   } else if (/rate.?limit|too many requests|\b429\b/i.test(message)) {
     hint = ` — ${provider} rate limit; wait a moment or switch models (/model)`;
-  } else if (/tool.?calling.*not supported|does not support tool/i.test(message)) {
-    hint = ` — this model cannot drive tools; pick a tool-capable one (/model)`;
+  } else if (/tool.?calling.*not supported|does not support (tool|chat completion)/i.test(message)) {
+    hint = ` — this model cannot work as a coding agent; pick a tool-capable chat model (/model)`;
   } else if (/model.*(not.?found|does.?not.?exist|decommissioned|deprecated)/i.test(message)) {
     hint = ` — that model id may be wrong or retired; pick another (/model)`;
   }

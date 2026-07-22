@@ -84,6 +84,36 @@ async function fetchRegistry(): Promise<ModelsDevData | undefined> {
   }
 }
 
+/** Register registry metadata under aerin "provider/model-id" naming. Exported for tests. */
+export function registerFromRegistry(data: ModelsDevData, providerIds: readonly string[]): number {
+  let count = 0;
+  for (const aerinId of providerIds) {
+    const candidates = PROVIDER_ALIASES[aerinId] ?? [aerinId];
+    for (const devId of candidates) {
+      const models = data[devId]?.models;
+      if (!models) continue;
+      for (const [modelId, m] of Object.entries(models)) {
+        const contextWindow = m.limit?.context;
+        const inputPerMTok = m.cost?.input;
+        const outputPerMTok = m.cost?.output;
+        // Register even metadata-light entries: a tool_call:false flag alone
+        // matters (it keeps whisper/TTS models out of the picker).
+        if (!contextWindow && inputPerMTok === undefined && typeof m.tool_call !== "boolean") continue;
+        registerModelInfo(`${aerinId}/${modelId}`, {
+          contextWindow: contextWindow || 200_000,
+          maxOutput: m.limit?.output || 8_192,
+          ...(inputPerMTok !== undefined ? { inputPerMTok } : {}),
+          ...(outputPerMTok !== undefined ? { outputPerMTok } : {}),
+          ...(typeof m.tool_call === "boolean" ? { toolCall: m.tool_call } : {}),
+        });
+        count++;
+      }
+      break; // first matching alias wins
+    }
+  }
+  return count;
+}
+
 let primed: Promise<number> | undefined;
 
 /**
@@ -94,31 +124,7 @@ let primed: Promise<number> | undefined;
 export function primeModelsDev(providerIds: readonly string[]): Promise<number> {
   primed ??= (async () => {
     const data = await fetchRegistry();
-    if (!data) return 0;
-    let count = 0;
-    for (const aerinId of providerIds) {
-      const candidates = PROVIDER_ALIASES[aerinId] ?? [aerinId];
-      for (const devId of candidates) {
-        const models = data[devId]?.models;
-        if (!models) continue;
-        for (const [modelId, m] of Object.entries(models)) {
-          const contextWindow = m.limit?.context;
-          const inputPerMTok = m.cost?.input;
-          const outputPerMTok = m.cost?.output;
-          if (!contextWindow && inputPerMTok === undefined) continue;
-          registerModelInfo(`${aerinId}/${modelId}`, {
-            contextWindow: contextWindow ?? 200_000,
-            maxOutput: m.limit?.output ?? 8_192,
-            ...(inputPerMTok !== undefined ? { inputPerMTok } : {}),
-            ...(outputPerMTok !== undefined ? { outputPerMTok } : {}),
-            ...(typeof m.tool_call === "boolean" ? { toolCall: m.tool_call } : {}),
-          });
-          count++;
-        }
-        break; // first matching alias wins
-      }
-    }
-    return count;
+    return data ? registerFromRegistry(data, providerIds) : 0;
   })();
   return primed;
 }
