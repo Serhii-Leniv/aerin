@@ -119,6 +119,48 @@ describe("keyLooksLike", () => {
   });
 });
 
+describe("session commands core", () => {
+  test("goal / plan / mode commands drive agent and policy", async () => {
+    const { goalCommand, togglePlan, cycleMode, skillsCommand, mcpCommand } = await import(
+      "../src/core/session-commands.js"
+    );
+    const { Agent } = await import("../src/core/agent.js");
+    const { PermissionPolicy } = await import("../src/permissions/policy.js");
+    const { mockModel } = await import("./mock-model.js");
+    const agent = new Agent({
+      model: mockModel([{ text: "x" }]),
+      modelId: "mock/mock",
+      systemPrompt: "s",
+      tools: [],
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "allow" }),
+      cwd: process.cwd(),
+      allowOutsideCwd: false,
+    });
+    const policy = new PermissionPolicy([], false);
+    const ctx = {
+      agent,
+      policy,
+      skills: [],
+      mcpConnections: [],
+      customCommands: [],
+      sessionId: "s1",
+      cwd: process.cwd(),
+    };
+    expect(goalCommand(ctx, "ship it")).toContain("ship it");
+    expect(agent.currentGoal).toBe("ship it");
+    expect(goalCommand(ctx, "clear")).toContain("cleared");
+    expect(agent.currentGoal).toBeUndefined();
+    expect(togglePlan(ctx)).toBe("plan");
+    expect(togglePlan(ctx)).toBe("manual");
+    expect(cycleMode(ctx)).toBe("accept");
+    expect(cycleMode(ctx)).toBe("plan");
+    expect(cycleMode(ctx)).toBe("manual");
+    expect(skillsCommand(ctx)).toContain("No skills");
+    expect(mcpCommand(ctx)).toContain("No MCP servers");
+  });
+});
+
 describe("hooks", () => {
   test("hookFor resolves specific over wildcard; runHook reports exit and output", async () => {
     const { hookFor, runHook } = await import("../src/core/hooks.js");

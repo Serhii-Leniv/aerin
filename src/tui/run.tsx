@@ -7,6 +7,7 @@ import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { messageText, redactSecrets, setTerminalTitle } from "../terminal/format.js";
+import { filterChunk } from "../terminal/input-filter.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -87,14 +88,13 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   let carryTimer: ReturnType<typeof setTimeout> | undefined;
   const onStdinData = (chunk: Buffer): void => {
     if (carryTimer) clearTimeout(carryTimer);
-    let s = carry + chunk.toString("utf8");
-    carry = "";
-    // Hold back a partial mouse sequence split across chunks — but flush it
-    // shortly if no continuation arrives (it was real input, not a mouse event).
-    const partial = /\x1b\[<[\d;]*$/.exec(s);
-    if (partial) {
-      carry = partial[0];
-      s = s.slice(0, partial.index);
+    const result = filterChunk(carry, chunk.toString("utf8"));
+    carry = result.carry;
+    for (const dir of result.wheel) mouse.emit("wheel", dir);
+    if (result.clean.length > 0) filteredStdin.write(result.clean);
+    if (carry) {
+      // Flush held-back bytes shortly if no continuation arrives — they were
+      // real input, not a mouse event.
       carryTimer = setTimeout(() => {
         if (carry) {
           filteredStdin.write(carry);
@@ -102,27 +102,6 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
         }
       }, 60);
     }
-    const re = /\x1b\[<(\d+);\d+;\d+[Mm]/g;
-    let clean = "";
-    let last = 0;
-    for (let m = re.exec(s); m; m = re.exec(s)) {
-      clean += s.slice(last, m.index);
-      last = m.index + m[0].length;
-      const button = Number(m[1]);
-      if ((button & 64) !== 0) mouse.emit("wheel", (button & 1) === 0 ? -1 : 1);
-      // other mouse events (clicks, drags) are swallowed for now
-    }
-    clean += s.slice(last);
-    // Ink's key parser can't surface Home/End/Ctrl+arrows — translate them to
-    // control codes LineInput understands, and strip bracketed-paste markers
-    // (mode 2004 makes multi-line pastes arrive as one atomic chunk).
-    clean = clean
-      .replace(/\x1b\[200~|\x1b\[201~/g, "")
-      .replace(/\x1b\[1~|\x1b\[H|\x1bOH/g, "\x01") // Home → Ctrl+A
-      .replace(/\x1b\[4~|\x1b\[F|\x1bOF/g, "\x05") // End  → Ctrl+E
-      .replace(/\x1b\[1;5D/g, "\x02") // Ctrl+← → word left
-      .replace(/\x1b\[1;5C/g, "\x06"); // Ctrl+→ → word right
-    if (clean.length > 0) filteredStdin.write(clean);
   };
   process.stdin.on("data", onStdinData);
 

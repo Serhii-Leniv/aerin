@@ -6,6 +6,17 @@ import type { OnPermission, PermissionDecision, PermissionRequest } from "../cor
 import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
 import { renderCommand, type CustomCommand } from "../core/commands.js";
 import { listJobs } from "../tools/bash-jobs.js";
+import {
+  compactCommand,
+  cycleMode,
+  goalCommand,
+  mcpCommand,
+  resumeById,
+  skillsCommand,
+  statusCommand,
+  togglePlan,
+  undoCommand,
+} from "../core/session-commands.js";
 import { allKnownModels, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
 import { PROVIDER_CATALOG, catalogEntry, keyLooksLike } from "../providers/catalog.js";
@@ -529,8 +540,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const resumeSession = useCallback(
     async (id: string): Promise<void> => {
-      const { store, messages } = await SessionStore.open(setup.cwd, id);
-      setup.agent.loadSession(store, messages);
+      const messages = await resumeById(setup, id);
       pushItem("info", `── resumed conversation (${messages.length} messages) ──`);
       replayHistory(messages);
       setCtxTokens(setup.agent.estimateContextTokens());
@@ -667,17 +677,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setTodos([]);
           return;
         }
-        case "/undo": {
-          const restored = await setup.agent.undo();
-          const rel = restored.map((p) => (p.startsWith(setup.cwd) ? p.slice(setup.cwd.length + 1) : p));
-          pushItem(
-            "info",
-            restored.length > 0
-              ? `(reverted ${restored.length} file${restored.length === 1 ? "" : "s"}: ${rel.join(", ").slice(0, 120)})`
-              : "(nothing to undo — no file changes recorded this session)",
-          );
+        case "/undo":
+          pushItem("info", await undoCommand(setup));
           return;
-        }
         case "/connect": {
           const [prov, key] = arg.split(/\s+/);
           if (prov && key) {
@@ -688,97 +690,47 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           return;
         }
         case "/status": {
-          const window = modelInfo(modelId).contextWindow;
-          const pct = ctxTokens > 0 ? ` (${Math.round((ctxTokens / window) * 100)}% of ${fmtTokens(window)} used)` : "";
           const freeTier = catalogEntry(modelId.split("/")[0] ?? "")?.freeTier;
           const jobs = listJobs();
           const running = jobs.filter((j) => j.running);
           pushItem(
             "info",
-            [
-              `aerin v${VERSION}${latestVersion && latestVersion !== VERSION ? `  (v${latestVersion} available — aerin update)` : ""}`,
-              `  session   ${setup.sessionId} · ${setup.agent.history.length} messages`,
-              `  model     ${modelId}${pct}`,
-              `  mode      ${mode === "accept" ? "accept edits" : mode}${setup.agent.currentGoal ? ` · ⌖ ${setup.agent.currentGoal.slice(0, 50)}` : ""}`,
-              `  cwd       ${shortenPath(setup.cwd, 60)}`,
-              `  tokens    ${fmtTokens(stats.inTok)}↑ ${fmtTokens(stats.outTok)}↓${stats.cost > 0 ? ` · $${stats.cost.toFixed(4)}${freeTier ? " (free tier — not billed)" : ""}` : ""}`,
-              `  mcp       ${setup.mcpConnections.length > 0 ? setup.mcpConnections.map((c) => c.serverName).join(", ") : "none"}`,
-              `  skills    ${setup.skills.length > 0 ? setup.skills.map((s) => s.name).join(", ") : "none"}`,
-              `  commands  ${setup.customCommands.length > 0 ? setup.customCommands.map((c) => "/" + c.name).join(", ") : "none"}`,
-              `  jobs      ${running.length > 0 ? running.map((j) => `${j.id} (${j.command.slice(0, 30)})`).join(", ") : jobs.length > 0 ? `${jobs.length} finished` : "none"}`,
-            ].join("\n"),
+            statusCommand(setup, {
+              modelId,
+              version: VERSION,
+              contextWindow: modelInfo(modelId).contextWindow,
+              ctxTokens,
+              cwdDisplay: shortenPath(setup.cwd, 60),
+              costLine: `${fmtTokens(stats.inTok)}↑ ${fmtTokens(stats.outTok)}↓${stats.cost > 0 ? ` · $${stats.cost.toFixed(4)}${freeTier ? " (free tier — not billed)" : ""}` : ""}`,
+              ...(latestVersion ? { latestVersion } : {}),
+              jobsLine:
+                running.length > 0
+                  ? running.map((j) => `${j.id} (${j.command.slice(0, 30)})`).join(", ")
+                  : jobs.length > 0
+                    ? `${jobs.length} finished`
+                    : "none",
+            }),
           );
           return;
         }
-        case "/skills": {
-          pushItem(
-            "info",
-            setup.skills.length > 0
-              ? `Skills:\n${setup.skills.map((s) => `  ${s.name.padEnd(Math.max(...setup.skills.map((x) => x.name.length)) + 2)}${s.description}`).join("\n")}\nThe agent loads one with the skill tool when a task matches.`
-              : "No skills found. Add one at .aerin/skills/<name>/SKILL.md (existing .claude/skills are read too).",
-          );
+        case "/skills":
+          pushItem("info", skillsCommand(setup));
           return;
-        }
-        case "/mcp": {
-          pushItem(
-            "info",
-            setup.mcpConnections.length > 0
-              ? `MCP servers:\n${setup.mcpConnections
-                  .map(
-                    (c) =>
-                      `  ${c.serverName} — ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}: ${c.tools
-                        .map((t) => t.name.replace(`mcp__${c.serverName}__`, ""))
-                        .slice(0, 8)
-                        .join(", ")}${c.tools.length > 8 ? ", …" : ""}`,
-                  )
-                  .join("\n")}`
-              : 'No MCP servers connected. Add them under "mcpServers" in the config (stdio or HTTP).',
-          );
+        case "/mcp":
+          pushItem("info", mcpCommand(setup));
           return;
-        }
         case "/goal": {
-          if (arg === "clear" || arg === "off") {
-            setup.agent.setGoal(undefined);
-            setGoalSet(false);
-            pushItem("info", "(goal cleared)");
-            return;
-          }
-          if (arg) {
-            setup.agent.setGoal(arg);
-            setGoalSet(true);
-            pushItem("info", `⌖ goal pinned: ${arg}`);
-            return;
-          }
-          pushItem(
-            "info",
-            setup.agent.currentGoal
-              ? `⌖ current goal: ${setup.agent.currentGoal}`
-              : "(no goal set — /goal <text> pins one into every request)",
-          );
+          pushItem("info", goalCommand(setup, arg));
+          setGoalSet(Boolean(setup.agent.currentGoal));
           return;
         }
-        case "/plan": {
-          const next: PermissionMode = setup.policy.inPlanMode ? "manual" : "plan";
-          setup.policy.setMode(next);
-          setMode(next);
+        case "/plan":
+          setMode(togglePlan(setup));
           return;
-        }
         case "/compact": {
-          const before = setup.agent.history.length;
-          if (before === 0) {
-            pushItem("info", "(nothing to compact — history is empty)");
-            return;
-          }
-          await setup.agent.compactNow();
-          const after = setup.agent.history.length;
-          const est = setup.agent.estimateContextTokens();
-          setCtxTokens(est);
-          pushItem(
-            "info",
-            after === before
-              ? "(history is still small — nothing was summarized)"
-              : `(compacted ${before} → ${after} messages, ~${fmtTokens(est)} tokens of context)`,
-          );
+          const r = await compactCommand(setup);
+          if (r.contextTokens > 0) setCtxTokens(r.contextTokens);
+          pushItem("info", r.message);
           return;
         }
         case "/exit":
@@ -892,9 +844,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     if (key.tab && key.shift) {
       // manual → accept edits → plan → manual (Claude Code order).
       // The status-bar badge and input border announce the mode — no chat spam.
-      const next: PermissionMode = mode === "manual" ? "accept" : mode === "accept" ? "plan" : "manual";
-      setup.policy.setMode(next);
-      setMode(next);
+      setMode(cycleMode(setup));
       return;
     }
     if (key.pageUp) {

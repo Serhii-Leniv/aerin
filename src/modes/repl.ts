@@ -10,6 +10,16 @@ import { renderMarkdown } from "../terminal/markdown.js";
 import { persistModelChoice, persistProviderKey } from "../config/config.js";
 import { renderCommand } from "../core/commands.js";
 import { catalogEntry, keyLooksLike } from "../providers/catalog.js";
+import {
+  compactCommand,
+  goalCommand,
+  mcpCommand,
+  resumeById,
+  skillsCommand,
+  statusCommand,
+  togglePlan,
+  undoCommand,
+} from "../core/session-commands.js";
 import { expandMentions } from "../core/mentions.js";
 
 interface ReplFlags {
@@ -158,8 +168,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         return undefined;
       }
       if (line === "/undo") {
-        const restored = await setup.agent.undo();
-        stdout.write(restored.length ? `  reverted ${restored.length} file(s)\n` : "  (nothing to undo)\n");
+        stdout.write(`  ${await undoCommand(setup)}\n`);
         return undefined;
       }
       if (line.startsWith("/connect")) {
@@ -191,51 +200,27 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         return undefined;
       }
       if (line === "/status") {
+        const { VERSION } = await import("../version.js");
         stdout.write(
-          [
-            `  session   ${setup.sessionId} · ${setup.agent.history.length} messages`,
-            `  model     ${setup.agent.modelId}`,
-            `  mode      ${setup.policy.currentMode}${setup.agent.currentGoal ? ` · goal: ${setup.agent.currentGoal.slice(0, 50)}` : ""}`,
-            `  tokens    ${setup.agent.totalInputTokens}↑ ${setup.agent.totalOutputTokens}↓`,
-            `  mcp       ${setup.mcpConnections.map((c) => c.serverName).join(", ") || "none"}`,
-            `  skills    ${setup.skills.map((s) => s.name).join(", ") || "none"}`,
-          ].join("\n") + "\n",
+          statusCommand(setup, { modelId: setup.agent.modelId, version: VERSION }) + "\n",
         );
         return undefined;
       }
       if (line === "/skills") {
-        stdout.write(
-          setup.skills.length
-            ? setup.skills.map((s) => `  ${s.name} — ${s.description}\n`).join("")
-            : "  (no skills — add .aerin/skills/<name>/SKILL.md)\n",
-        );
+        stdout.write(skillsCommand(setup) + "\n");
         return undefined;
       }
       if (line === "/mcp") {
-        stdout.write(
-          setup.mcpConnections.length
-            ? setup.mcpConnections.map((c) => `  ${c.serverName} — ${c.tools.length} tools\n`).join("")
-            : "  (no MCP servers — add mcpServers to the config)\n",
-        );
+        stdout.write(mcpCommand(setup) + "\n");
         return undefined;
       }
       if (line === "/goal" || line.startsWith("/goal ")) {
-        const g = line.slice("/goal".length).trim();
-        if (g === "clear" || g === "off") {
-          setup.agent.setGoal(undefined);
-          stdout.write("  (goal cleared)\n");
-        } else if (g) {
-          setup.agent.setGoal(g);
-          stdout.write(`  ⌖ goal pinned: ${g}\n`);
-        } else {
-          stdout.write(setup.agent.currentGoal ? `  ⌖ ${setup.agent.currentGoal}\n` : "  (no goal set)\n");
-        }
+        stdout.write(goalCommand(setup, line.slice("/goal".length).trim()) + "\n");
         return undefined;
       }
       if (line === "/plan") {
-        const next = !setup.policy.inPlanMode;
-        setup.policy.setPlanMode(next);
-        stdout.write(next ? "  (plan mode ON — read-only)\n" : "  (plan mode OFF)\n");
+        const next = togglePlan(setup);
+        stdout.write(next === "plan" ? "  (plan mode ON — read-only)\n" : "  (plan mode OFF)\n");
         return undefined;
       }
       if (line === "/clear") {
@@ -245,8 +230,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       }
       if (line === "/compact") {
         try {
-          await setup.agent.compactNow();
-          stdout.write("  (compacted)\n");
+          stdout.write(`  ${(await compactCommand(setup)).message}\n`);
         } catch (err) {
           stdout.write(`  compact failed: ${err instanceof Error ? err.message : err}\n`);
         }
@@ -274,9 +258,8 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           return undefined;
         }
         try {
-          const opened = await SessionStore.open(setup.cwd, id);
-          setup.agent.loadSession(opened.store, opened.messages);
-          stdout.write(`  resumed conversation (${opened.messages.length} messages)\n`);
+          const messages = await resumeById(setup, id);
+          stdout.write(`  resumed conversation (${messages.length} messages)\n`);
         } catch (err) {
           stdout.write(`  resume failed: ${err instanceof Error ? err.message : err}\n`);
         }
