@@ -32,7 +32,7 @@ import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
-import { C } from "./theme.js";
+import { C, isLightTheme } from "./theme.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
 export interface TuiSetup {
@@ -152,6 +152,8 @@ const LOGO = [
   "╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝",
 ] as const;
 const MIN_LOGO_COLUMNS = 42;
+/** Row shades for the wordmark: bright pink at the top melting into synth purple. */
+const SUNSET = ["#ffa3c7", "#ff8db6", "#ff77a9", "#f75f9c", "#e0559f", "#bd93f9"] as const;
 
 /** Truecolor ANSI paint for banner text baked into the transcript. */
 function paint(s: string, hex: string, bold = false): string {
@@ -217,14 +219,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   // The startup banner is transcript content, not chrome (Claude Code-style):
   // it scrolls away as the conversation grows and reappears on /clear.
+  // Synthwave sunset: the wordmark fades row by row from bright pink down
+  // into synth purple at a horizon line — one hue family, all aerin.
   const bannerItem = (model: string, key = 0): TranscriptItem => {
     const art =
       size.columns >= MIN_LOGO_COLUMNS
-        ? LOGO.map((row) => paint(row, C.accentBright, true)).join("\n")
+        ? LOGO.map((row, i) =>
+            paint(row, isLightTheme() ? C.accentBright : (SUNSET[i] ?? C.accentBright), true),
+          ).join("\n")
         : paint("✦ Aerin", C.accentBright, true);
+    const horizon = paint("─".repeat(Math.min(37, Math.max(10, size.columns - 4))), C.magenta);
     const info =
       paint(`v${VERSION} · `, C.dim) + paint(model, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
-    return { key, kind: "assistant", text: `${art}\n${info}` };
+    return { key, kind: "assistant", text: `${art}\n${horizon}\n${info}` };
   };
   const [items, setItems] = useState<TranscriptItem[]>(() => [
     bannerItem(setup.modelId),

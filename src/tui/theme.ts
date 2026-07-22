@@ -44,9 +44,17 @@ const LIGHT: typeof C = {
   heroGradient: ["#d6336c", "#7048b6", "#006db8"] as readonly string[],
 };
 
+let lightMode = false;
+
 /** Swap the palette for a light terminal background. Call before first render. */
 export function applyBackgroundTheme(light: boolean): void {
+  lightMode = light;
   if (light) Object.assign(C, LIGHT);
+}
+
+/** Whether the light-background palette is active. */
+export function isLightTheme(): boolean {
+  return lightMode;
 }
 
 /** "r;g;b" for raw ANSI truecolor sequences built from theme hexes. */
