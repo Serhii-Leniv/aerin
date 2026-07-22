@@ -420,7 +420,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // Render markdown live while streaming — partial constructs (an unclosed
     // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
     // The ▌ cursor marks where new text lands.
-    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())) + paint("▌", C.accent));
+    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())) + paint("▌", C.accentBright));
   }, []);
 
   const runTurn = useCallback(
@@ -1079,8 +1079,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
       {thinking && reasoningTail ? (
         <Box flexDirection="column" marginBottom={0}>
-          <Text color={C.magenta} italic>
-            {reasoningTail}
+          <Text>
+            <Text color={C.accentBright}>✻ </Text>
+            <Text color={C.magenta} italic>
+              {reasoningTail}
+            </Text>
           </Text>
         </Box>
       ) : null}

@@ -215,7 +215,13 @@ export function LineInput(props: {
       <Box>
         <Text color={C.accent}>{props.prompt}</Text>
         <Text>{before}</Text>
-        {props.active ? <Text inverse>{at}</Text> : <Text>{at}</Text>}
+        {props.active ? (
+          <Text backgroundColor={C.accentBright} color="#16161e">
+            {at}
+          </Text>
+        ) : (
+          <Text>{at}</Text>
+        )}
         <Text>{after}</Text>
         {!value && props.placeholder ? (
           <Text color={C.dim} dimColor>
@@ -261,7 +267,8 @@ export function Spinner(props: { label: string; since?: number }): React.ReactEl
   const elapsed = props.since ? Math.floor((Date.now() - props.since) / 1000) : 0;
   return (
     <Text color={C.dim}>
-      <Text color={C.accent}>{SPINNER_FRAMES[frame]}</Text> {props.label}
+      {/* Neon pulse: the glyph flickers pink ↔ synth purple. */}
+      <Text color={frame % 2 === 0 ? C.accentBright : C.magenta}>{SPINNER_FRAMES[frame]}</Text> {props.label}
       {elapsed > 0 ? ` · ${elapsed}s` : ""}
     </Text>
   );
