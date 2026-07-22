@@ -4,6 +4,7 @@ import type { ToolDef, ToolContext } from "../tools/types.js";
 import { PermissionPolicy, targetFor } from "../permissions/policy.js";
 import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
+import { catalogEntry } from "../providers/catalog.js";
 import { shouldCompact, compact } from "./compact.js";
 import { Checkpoints } from "./checkpoints.js";
 import path from "node:path";
@@ -345,12 +346,25 @@ export class Agent {
         const usage = await result.usage;
         // Cached input is excluded from inputTokens but still occupies context —
         // count it so the meter reflects the true conversation size.
-        const inTok = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0);
-        const outTok = usage.outputTokens ?? 0;
+        let inTok = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0);
+        let outTok = usage.outputTokens ?? 0;
+        if (inTok === 0 && outTok === 0) {
+          // Local/OpenAI-compatible servers (Ollama, LM Studio, some proxies)
+          // often omit usage in streamed responses — estimate at ~4 chars/token
+          // so the context meter and totals keep working.
+          inTok = this.estimateContextTokens();
+          outTok = Math.max(1, Math.round(sanitized.reduce((n, m) => n + JSON.stringify(m).length, 0) / 4));
+        }
         this.lastInputTokens = inTok;
         this.totalInputTokens += inTok;
         this.totalOutputTokens += outTok;
-        const cost = estimateCostUsd(this.opts.modelId, inTok, outTok);
+        // Free-tier providers (Groq dev tier, Google AI Studio, ...) are not
+        // billed — showing projected dollars there misleads, so cost stays
+        // blank for them. Paid enrollment can't be detected from here.
+        const provider = this.opts.modelId.split("/")[0] ?? "";
+        const cost = catalogEntry(provider)?.freeTier
+          ? undefined
+          : estimateCostUsd(this.opts.modelId, inTok, outTok);
         if (cost !== undefined) this.totalCostUsd += cost;
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };
 
