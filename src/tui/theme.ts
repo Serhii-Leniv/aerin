@@ -1,19 +1,19 @@
 /**
- * Aerin's color theme: Sky — aerin means air, and the brand is the one strong
- * color still unclaimed in the agent space (orange = Claude Code, red =
- * OpenClaw, blue/purple = Gemini). A single sky-cyan hero carries identity;
- * everything else stays neutral or semantic. Central palette: UI code refers
- * to roles, never raw colors, so retheming is a one-file change. The palette
- * is mutable so background detection can swap in the light-terminal variants
- * before first render.
+ * Aerin's color theme: Navy — a deep-blue brand, serious and steady. True
+ * navy is unreadable as text on a dark terminal, so the brand splits by
+ * background (the Klein-void discipline): royal/steel blue renditions on
+ * dark, true navy on light. Central palette: UI code refers to roles, never
+ * raw colors, so retheming is a one-file change. The palette is mutable so
+ * background detection can swap in the light-terminal variants before first
+ * render.
  */
 export const C = {
   /** Interactive accent: prompts, model name, pickers, links. */
-  accent: "#5cc8ff", // sky cyan — readable as text on dark and light
+  accent: "#7aa2f7", // steel blue — navy's readable voice on dark
   /** Main brand hero: the wordmark, prompt marker, borders. */
-  accentBright: "#8adcff", // bright sky — hero moments only
+  accentBright: "#4d8bff", // royal blue — hero moments, bold
   /** Secondary/meta text. */
-  dim: "#6272a4", // muted purple-gray
+  dim: "#6272a4", // muted blue-gray
   /** Success / done. */
   ok: "#50fa7b", // green
   /** Warnings, in-progress, queued. */
@@ -28,10 +28,10 @@ export const C = {
   fg: "#f8f8f2",
 };
 
-/** Same roles re-picked for white/light terminal backgrounds. */
+/** Same roles re-picked for white/light terminal backgrounds — true navy. */
 const LIGHT: typeof C = {
-  accent: "#006db8", // deep sky
-  accentBright: "#005f9e", // hero, darkened for white
+  accent: "#1d4ed8", // deep blue
+  accentBright: "#1e3a8a", // true navy hero
   dim: "#5f6b8c",
   ok: "#1f9d55",
   warn: "#9a7b00",
