@@ -191,6 +191,20 @@ export async function setupAgent(
   };
 }
 
+const MAX_STDIN_CHARS = 400_000;
+
+async function readStdin(): Promise<string> {
+  let data = "";
+  for await (const chunk of process.stdin) {
+    data += chunk.toString();
+    if (data.length > MAX_STDIN_CHARS) {
+      data = data.slice(0, MAX_STDIN_CHARS) + "\n[...stdin truncated]";
+      break;
+    }
+  }
+  return data;
+}
+
 export async function main(argv: string[]): Promise<void> {
   const program = new Command();
   program
@@ -236,12 +250,19 @@ export async function main(argv: string[]): Promise<void> {
 
   try {
     if (opts["print"]) {
-      if (!promptArgs) {
-        process.stderr.write("aerin -p requires a prompt argument\n");
+      // Piped input becomes part of the prompt: `cat error.log | aerin -p "why?"`.
+      const piped = process.stdin.isTTY ? "" : (await readStdin()).trim();
+      const prompt = piped
+        ? promptArgs
+          ? `${promptArgs}\n\n[piped stdin]:\n${piped}`
+          : piped
+        : promptArgs;
+      if (!prompt) {
+        process.stderr.write("aerin -p requires a prompt argument or piped stdin\n");
         process.exitCode = 1;
         return;
       }
-      await runPrint(flags, promptArgs);
+      await runPrint(flags, prompt);
       return;
     }
 

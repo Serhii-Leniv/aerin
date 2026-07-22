@@ -60,6 +60,38 @@ export function errorMessage(err: unknown): string {
   return String(err);
 }
 
+/** Messages newer than this stay intact; older tool outputs get elided. */
+const PRUNE_KEEP_TAIL = 20;
+/** Only outputs bigger than this are worth eliding. */
+const PRUNE_MIN_CHARS = 1500;
+
+/**
+ * Replace bulky tool outputs in the old part of a conversation with a stub.
+ * Stale file dumps and command output are the main context hogs; the model
+ * can always re-run a tool if it truly needs the data again. Returns a new
+ * array — stored history is never mutated.
+ */
+export function pruneOldToolResults(messages: ModelMessage[], keepTail: number = PRUNE_KEEP_TAIL): ModelMessage[] {
+  const cut = messages.length - keepTail;
+  if (cut <= 0) return messages;
+  return messages.map((m, i) => {
+    if (i >= cut || m.role !== "tool" || !Array.isArray(m.content)) return m;
+    let changed = false;
+    const content = (m.content as { output?: { type?: string; value?: unknown } }[]).map((part) => {
+      const value = part?.output?.value;
+      if (typeof value === "string" && value.length > PRUNE_MIN_CHARS) {
+        changed = true;
+        return {
+          ...part,
+          output: { ...part.output, value: `[old tool output elided (${value.length} chars) — re-run the tool if needed]` },
+        };
+      }
+      return part;
+    });
+    return changed ? ({ ...m, content } as ModelMessage) : m;
+  });
+}
+
 export interface AgentOptions {
   model: LanguageModel;
   modelId: string;
@@ -159,15 +191,16 @@ export class Agent {
     messages: ModelMessage[];
     allowSystemInMessages?: boolean;
   } {
+    const pruned = pruneOldToolResults(this.messages);
     if (!this.opts.modelId.startsWith("anthropic/")) {
-      return { system: this.opts.systemPrompt, messages: this.messages };
+      return { system: this.opts.systemPrompt, messages: pruned };
     }
     const cacheOpts = { anthropic: { cacheControl: { type: "ephemeral" } } };
     const withCache = (m: ModelMessage): ModelMessage =>
       ({ ...m, providerOptions: { ...(m as { providerOptions?: object }).providerOptions, ...cacheOpts } }) as ModelMessage;
     const system = withCache({ role: "system", content: this.opts.systemPrompt } as ModelMessage);
-    const last = this.messages[this.messages.length - 1];
-    const messages = last ? [system, ...this.messages.slice(0, -1), withCache(last)] : [system];
+    const last = pruned[pruned.length - 1];
+    const messages = last ? [system, ...pruned.slice(0, -1), withCache(last)] : [system];
     return { messages, allowSystemInMessages: true };
   }
 

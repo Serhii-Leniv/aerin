@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { isRetryableError } from "../src/core/agent.js";
+import type { ModelMessage } from "ai";
+import { isRetryableError, pruneOldToolResults } from "../src/core/agent.js";
 import { startJob, getJob, bashOutputTool } from "../src/tools/bash-jobs.js";
 
 describe("isRetryableError", () => {
@@ -15,6 +16,38 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("401 invalid api key"))).toBe(false);
     expect(isRetryableError(new Error("model not found"))).toBe(false);
     expect(isRetryableError(new Error("invalid request: messages must not be empty"))).toBe(false);
+  });
+});
+
+describe("pruneOldToolResults", () => {
+  const toolMsg = (value: string): ModelMessage =>
+    ({
+      role: "tool",
+      content: [{ type: "tool-result", toolCallId: "x", toolName: "read", output: { type: "text", value } }],
+    }) as ModelMessage;
+
+  test("elides big old outputs, keeps the tail and small outputs intact", () => {
+    const big = "x".repeat(5000);
+    const messages: ModelMessage[] = [
+      { role: "user", content: "q" },
+      toolMsg(big),
+      toolMsg("small"),
+      ...Array.from({ length: 20 }, (_, i) => ({ role: "user", content: `m${i}` }) as ModelMessage),
+      toolMsg(big), // inside the kept tail
+    ];
+    const pruned = pruneOldToolResults(messages, 21);
+    const val = (m: ModelMessage): string =>
+      ((m.content as { output?: { value?: string } }[])[0]?.output?.value ?? "") as string;
+    expect(val(pruned[1] as ModelMessage)).toContain("elided");
+    expect(val(pruned[2] as ModelMessage)).toBe("small");
+    expect(val(pruned[pruned.length - 1] as ModelMessage)).toBe(big);
+    // original untouched
+    expect(val(messages[1] as ModelMessage)).toBe(big);
+  });
+
+  test("short conversations pass through unchanged", () => {
+    const messages: ModelMessage[] = [{ role: "user", content: "hi" }, toolMsg("y".repeat(9000))];
+    expect(pruneOldToolResults(messages, 20)).toBe(messages);
   });
 });
 

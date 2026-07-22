@@ -87,6 +87,15 @@ export function LineInput(props: {
         }
       }
       if (key.return) {
+        // Alt+Enter always inserts a newline; a trailing "\" continues the line.
+        if (key.meta) {
+          set(value.slice(0, cursor) + "\n" + value.slice(cursor), cursor + 1);
+          return;
+        }
+        if (value.slice(0, cursor).endsWith("\\")) {
+          set(value.slice(0, cursor - 1) + "\n" + value.slice(cursor), cursor);
+          return;
+        }
         const v = value;
         set("", 0);
         setHistIdx(-1);
@@ -96,6 +105,23 @@ export function LineInput(props: {
       }
       if (key.leftArrow) return setCursor((c) => Math.max(0, c - 1));
       if (key.rightArrow) return setCursor((c) => Math.min(value.length, c + 1));
+      // In a multi-line draft, up/down move between lines; otherwise history.
+      if (value.includes("\n") && (key.upArrow || key.downArrow)) {
+        const lines = value.split("\n");
+        let line = 0;
+        let col = cursor;
+        for (const l of lines) {
+          if (col <= l.length) break;
+          col -= l.length + 1;
+          line++;
+        }
+        const target = key.upArrow ? line - 1 : line + 1;
+        if (target < 0 || target >= lines.length) return;
+        let pos = 0;
+        for (let i = 0; i < target; i++) pos += (lines[i]?.length ?? 0) + 1;
+        setCursor(pos + Math.min(col, lines[target]?.length ?? 0));
+        return;
+      }
       if (key.upArrow) {
         if (history.length === 0) return;
         if (histIdx === -1) setDraft(value);
@@ -133,7 +159,7 @@ export function LineInput(props: {
         return;
       }
       if (input && !key.meta) {
-        const clean = input.replace(/\r?\n/g, " "); // flatten pasted newlines
+        const clean = input.replace(/\r\n?/g, "\n"); // pasted newlines are preserved
         set(value.slice(0, cursor) + clean + value.slice(cursor), cursor + clean.length);
         setHistIdx(-1);
         setSuggIdx(0);

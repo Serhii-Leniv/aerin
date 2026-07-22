@@ -24,12 +24,15 @@ export async function runDoctor(cwd: string): Promise<void> {
     lines.push(warn("no bash found — install Git for Windows for a much better agent experience"));
   }
 
-  const rg = spawnSync("rg", ["--version"], { windowsHide: true, shell: false });
+  const { findRipgrep } = await import("../tools/search-tools.js");
+  const rgBin = await findRipgrep();
   lines.push("", "Search:");
   lines.push(
-    rg.status === 0
-      ? ok(`ripgrep ${String(rg.stdout).split("\n")[0]?.replace("ripgrep ", "")}`)
-      : warn("ripgrep not on PATH — grep falls back to a slower JS implementation"),
+    rgBin
+      ? ok(`ripgrep: ${rgBin === "rg" ? "on PATH" : rgBin}`)
+      : warn(
+          "ripgrep not found (PATH or VS Code) — grep uses a slower JS fallback. Install: winget install BurntSushi.ripgrep.MSVC",
+        ),
   );
 
   lines.push("", "Config:");

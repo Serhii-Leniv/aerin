@@ -61,21 +61,52 @@ export const globTool: ToolDef<z.ZodTypeAny> = {
   },
 };
 
-let rgAvailable: boolean | undefined;
+let rgPath: string | null | undefined; // undefined = not probed, null = unavailable
+
+/** Places a ripgrep binary hides when it's not on PATH — most commonly the
+ *  one bundled inside VS Code. (No @vscode/ripgrep dependency: its postinstall
+ *  download conflicts with aerin's lean-install rule.) */
+function bundledRgCandidates(): string[] {
+  const rgBin = process.platform === "win32" ? "rg.exe" : "rg";
+  const suffix = path.join("resources", "app", "node_modules", "@vscode", "ripgrep", "bin", rgBin);
+  const roots = [
+    process.env["LOCALAPPDATA"] ? path.join(process.env["LOCALAPPDATA"], "Programs", "Microsoft VS Code") : undefined,
+    "C:\\Program Files\\Microsoft VS Code",
+    "/usr/share/code",
+    "/Applications/Visual Studio Code.app/Contents/Resources/app/node_modules/@vscode/ripgrep/bin",
+  ].filter((r): r is string => Boolean(r));
+  return roots.map((r) => (r.endsWith("bin") ? path.join(r, rgBin) : path.join(r, suffix)));
+}
+
+export async function findRipgrep(): Promise<string | null> {
+  if (rgPath !== undefined) return rgPath;
+  const works = (bin: string): Promise<boolean> =>
+    new Promise((resolve) => {
+      const p = spawn(bin, ["--version"], { windowsHide: true, shell: false });
+      p.on("error", () => resolve(false));
+      p.on("exit", (code) => resolve(code === 0));
+    });
+  if (await works("rg")) {
+    rgPath = "rg";
+    return rgPath;
+  }
+  for (const candidate of bundledRgCandidates()) {
+    if (await works(candidate)) {
+      rgPath = candidate;
+      return rgPath;
+    }
+  }
+  rgPath = null;
+  return rgPath;
+}
 
 async function hasRipgrep(): Promise<boolean> {
-  if (rgAvailable !== undefined) return rgAvailable;
-  rgAvailable = await new Promise<boolean>((resolve) => {
-    const p = spawn("rg", ["--version"], { windowsHide: true, shell: false });
-    p.on("error", () => resolve(false));
-    p.on("exit", (code) => resolve(code === 0));
-  });
-  return rgAvailable;
+  return (await findRipgrep()) !== null;
 }
 
 function runRipgrep(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    const p = spawn("rg", args, { cwd, windowsHide: true, shell: false, signal });
+    const p = spawn(rgPath ?? "rg", args, { cwd, windowsHide: true, shell: false, signal });
     let out = "";
     let err = "";
     p.stdout.on("data", (d: Buffer) => (out += d.toString()));
