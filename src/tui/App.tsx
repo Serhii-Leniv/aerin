@@ -261,7 +261,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         if (!res.ok) return;
         const latest = ((await res.json()) as { version?: string }).version;
         if (latest && latest !== VERSION && VERSION !== "0.0.0") {
-          pushItem("info", `(update available: v${latest} — npm i -g aerin-agent)`);
+          pushItem("info", `(update available: v${latest} — run "aerin update")`);
         }
       } catch {
         // offline — never bother the user

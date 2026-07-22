@@ -223,13 +223,18 @@ export async function main(argv: string[]): Promise<void> {
     .option("--no-mcp", "skip connecting to configured MCP servers")
     .addHelpText(
       "after",
-      "\nSubcommands:\n  aerin doctor    diagnose your environment (shell, keys, config, ripgrep, MCP)\n",
+      "\nSubcommands:\n  aerin doctor    diagnose your environment (shell, keys, config, ripgrep, MCP)\n  aerin update    update aerin to the latest version from npm\n",
     );
 
-  // Routed before commander parsing so it can't collide with the prompt argument.
+  // Routed before commander parsing so they can't collide with the prompt argument.
   if (argv[2] === "doctor") {
     const { runDoctor } = await import("./modes/doctor.js");
     await runDoctor(process.cwd());
+    return;
+  }
+  if (argv[2] === "update") {
+    const { runUpdate } = await import("./modes/update.js");
+    await runUpdate();
     return;
   }
 
