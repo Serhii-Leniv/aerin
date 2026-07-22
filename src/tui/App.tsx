@@ -370,8 +370,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const scrollBy = useCallback((deltaLines: number) => {
     setScrollOffset((o) => {
-      const max = Math.max(0, flatLinesRef.current.length - Math.max(4, viewportHRef.current));
-      return Math.min(max, Math.max(0, o + deltaLines));
+      const lines = flatLinesRef.current;
+      const max = Math.max(0, lines.length - Math.max(4, viewportHRef.current));
+      // Trailing blank margin rows carry no content — the first upward step
+      // hops past them (otherwise a wheel notch "scrolls" only blanks and
+      // looks dead), and scrolling back down inside them snaps to live.
+      let blanks = 0;
+      while (blanks < lines.length && lines[lines.length - 1 - blanks]!.text === "") blanks++;
+      let next = o + deltaLines;
+      if (o === 0 && deltaLines > 0) next += blanks;
+      else if (deltaLines < 0 && next <= blanks) next = 0;
+      return Math.min(max, Math.max(0, next));
     });
   }, []);
 
