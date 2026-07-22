@@ -9,6 +9,8 @@ export interface ModelInfo {
   maxOutput: number;
   inputPerMTok?: number;
   outputPerMTok?: number;
+  /** Explicitly false = the model cannot drive tools (whisper, TTS, guards). */
+  toolCall?: boolean;
 }
 
 export const DEFAULT_MODEL_INFO: ModelInfo = {

@@ -191,6 +191,9 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
         for (const m of bare) {
           const fullId = `${provider}/${m.id}`;
           const known = knownModelInfo(fullId);
+          // An agent needs tool calling — hide models the registry marks as
+          // incapable (whisper, TTS, guard classifiers). Unknown = keep.
+          if (known?.toolCall === false) continue;
           // "free" is shown only for genuinely $0 pricing (formatModelLabel);
           // provider-level free tiers are indicated in /connect and the meter.
           models.push({

@@ -32,6 +32,12 @@ describe("enrichProviderError", () => {
     expect(enrichProviderError("openrouter/x", "insufficient credits")).toContain("billing");
   });
 
+  test("tool-calling-unsupported gets a pick-another-model hint", () => {
+    expect(enrichProviderError("groq/groq/compound", "`tool calling` is not supported with this model")).toContain(
+      "cannot drive tools",
+    );
+  });
+
   test("unknown errors still carry the model context", () => {
     expect(enrichProviderError("openai/gpt-4o", "something odd")).toBe("[openai/gpt-4o] something odd");
   });

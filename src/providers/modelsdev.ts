@@ -24,6 +24,7 @@ const PROVIDER_ALIASES: Record<string, string[]> = {
 interface ModelsDevModel {
   cost?: { input?: number; output?: number };
   limit?: { context?: number; output?: number };
+  tool_call?: boolean;
 }
 type ModelsDevData = Record<
   string,
@@ -110,6 +111,7 @@ export function primeModelsDev(providerIds: readonly string[]): Promise<number> 
             maxOutput: m.limit?.output ?? 8_192,
             ...(inputPerMTok !== undefined ? { inputPerMTok } : {}),
             ...(outputPerMTok !== undefined ? { outputPerMTok } : {}),
+            ...(typeof m.tool_call === "boolean" ? { toolCall: m.tool_call } : {}),
           });
           count++;
         }
