@@ -1,0 +1,73 @@
+import fs from "node:fs";
+import { stdout } from "node:process";
+import { spawnSync } from "node:child_process";
+import { detectShell } from "../tools/bash.js";
+import { loadConfig, DEFAULT_MODEL } from "../config/config.js";
+import { GLOBAL_CONFIG_FILE, projectSettingsFile, sessionsDir } from "../config/paths.js";
+import { PROVIDERS, resolveApiKey } from "../providers/registry.js";
+import { SessionStore } from "../session/store.js";
+import { VERSION } from "../version.js";
+
+const ok = (s: string) => `  ✓ ${s}`;
+const warn = (s: string) => `  ! ${s}`;
+const info = (s: string) => `  · ${s}`;
+
+/** `aerin doctor` — environment diagnostics for bug reports and setup help. */
+export async function runDoctor(cwd: string): Promise<void> {
+  const lines: string[] = [];
+  lines.push(`aerin ${VERSION} on ${process.platform} (node ${process.version})`);
+
+  const shell = detectShell();
+  lines.push("", "Shell for the bash tool:");
+  lines.push(ok(`${shell.kind}: ${shell.path}`));
+  if (shell.kind === "powershell") {
+    lines.push(warn("no bash found — install Git for Windows for a much better agent experience"));
+  }
+
+  const rg = spawnSync("rg", ["--version"], { windowsHide: true, shell: false });
+  lines.push("", "Search:");
+  lines.push(
+    rg.status === 0
+      ? ok(`ripgrep ${String(rg.stdout).split("\n")[0]?.replace("ripgrep ", "")}`)
+      : warn("ripgrep not on PATH — grep falls back to a slower JS implementation"),
+  );
+
+  lines.push("", "Config:");
+  lines.push(info(`global:  ${GLOBAL_CONFIG_FILE} ${fs.existsSync(GLOBAL_CONFIG_FILE) ? "(exists)" : "(none)"}`));
+  const projFile = projectSettingsFile(cwd);
+  lines.push(info(`project: ${projFile} ${fs.existsSync(projFile) ? "(exists)" : "(none)"}`));
+
+  let configOk = true;
+  try {
+    const { config } = await loadConfig(cwd);
+    lines.push(info(`default model: ${config.model ?? DEFAULT_MODEL}${config.model ? "" : " (built-in default)"}`));
+
+    lines.push("", "Providers:");
+    for (const [id, meta] of Object.entries(PROVIDERS)) {
+      if (!meta.needsKey) {
+        lines.push(info(`${meta.name}: no key needed (local)`));
+        continue;
+      }
+      const key = resolveApiKey(id, config);
+      lines.push(
+        key
+          ? ok(`${meta.name}: key found (${key.slice(0, 6)}…, ${key.length} chars)`)
+          : info(`${meta.name}: no key (${meta.envVar})`),
+      );
+    }
+
+    const mcpNames = Object.keys(config.mcpServers ?? {});
+    lines.push("", "MCP servers:");
+    lines.push(mcpNames.length ? info(mcpNames.join(", ")) : info("(none configured)"));
+  } catch (err) {
+    configOk = false;
+    lines.push(warn(`config error: ${err instanceof Error ? err.message : err}`));
+  }
+
+  const sessions = await SessionStore.list(cwd).catch(() => []);
+  lines.push("", "Sessions:");
+  lines.push(info(`${sessions.length} in ${sessionsDir(cwd)}`));
+
+  stdout.write(lines.join("\n") + "\n");
+  if (!configOk) process.exitCode = 1;
+}

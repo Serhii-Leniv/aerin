@@ -62,6 +62,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [thinking, setThinking] = useState(false);
 
   const nextKey = useRef(100);
   const streamBuf = useRef("");
@@ -91,12 +92,13 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       try {
         for await (const event of setup.agent.send(prompt)) {
           switch (event.type) {
-            case "text-delta":
-            case "reasoning-delta": {
-              if (event.type === "text-delta") {
-                streamBuf.current += event.text;
-                if (!flushTimer.current) flushTimer.current = setTimeout(flushStream, 50);
-              }
+            case "reasoning-delta":
+              setThinking(true);
+              break;
+            case "text-delta": {
+              setThinking(false);
+              streamBuf.current += event.text;
+              if (!flushTimer.current) flushTimer.current = setTimeout(flushStream, 50);
               break;
             }
             case "message-end": {
@@ -136,6 +138,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       } finally {
         workingRef.current = false;
         setWorking(false);
+        setThinking(false);
         setPermission(null);
       }
     },
@@ -276,7 +279,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       </Static>
 
       {streaming ? <Text>{streaming}</Text> : null}
-      {working && !permission ? <Spinner label="working — Esc to interrupt" /> : null}
+      {working && !permission ? (
+        <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
+      ) : null}
 
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>

@@ -107,7 +107,19 @@ export async function main(argv: string[]): Promise<void> {
     .option("--allow-outside-cwd", "permit writes outside the working directory", false)
     .option("--cwd <dir>", "working directory override")
     .option("--no-mcp", "skip connecting to configured MCP servers")
-    .parse(argv);
+    .addHelpText(
+      "after",
+      "\nSubcommands:\n  aerin doctor    diagnose your environment (shell, keys, config, ripgrep, MCP)\n",
+    );
+
+  // Routed before commander parsing so it can't collide with the prompt argument.
+  if (argv[2] === "doctor") {
+    const { runDoctor } = await import("./modes/doctor.js");
+    await runDoctor(process.cwd());
+    return;
+  }
+
+  program.parse(argv);
 
   const opts = program.opts();
   const promptArgs = program.args.join(" ").trim();
