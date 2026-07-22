@@ -86,9 +86,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
   const runTurn = async (prompt: string): Promise<void> => {
     running = true;
     let textBuf = "";
-    const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
+    const expanded = await expandMentions(prompt, setup.cwd).catch(() => ({ text: prompt, images: [] }));
     try {
-      for await (const event of setup.agent.send(expanded)) {
+      for await (const event of setup.agent.send(expanded.text, expanded.images)) {
         switch (event.type) {
           case "text-delta":
             if (renderForTty) textBuf += event.text;

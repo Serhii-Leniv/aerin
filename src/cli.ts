@@ -138,7 +138,9 @@ export async function setupAgent(
   const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo);
   const skills = await discoverSkills(cwd);
   const customCommands = await discoverCommands(cwd);
-  const systemPrompt = await buildSystemPrompt(cwd, modelId, skills);
+  const { discoverAgents } = await import("./core/agents.js");
+  const namedAgents = await discoverAgents(cwd);
+  const systemPrompt = await buildSystemPrompt(cwd, modelId, skills, namedAgents);
   if (skills.length > 0) tools.push(createSkillTool(skills));
 
   let store: SessionStore;
@@ -171,6 +173,7 @@ export async function setupAgent(
     allowOutsideCwd: flags.allowOutsideCwd,
     store,
     initialMessages,
+    ...(config.hooks && Object.keys(config.hooks).length > 0 ? { hooks: config.hooks } : {}),
   });
 
   // Registered after construction so the tool tracks /model switches via the
@@ -183,6 +186,8 @@ export async function setupAgent(
       ...(subModelId
         ? { getSubagentModel: () => ({ model: resolveModel(subModelId, config), modelId: subModelId }) }
         : {}),
+      namedAgents,
+      resolveModelFn: (id) => resolveModel(id, config),
     }),
   );
   // Only offer the question tool when someone can actually answer — in

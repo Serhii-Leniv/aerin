@@ -26,6 +26,8 @@ export const configSchema = z.object({
   subagentModel: z.string().optional(),
   /** Maintained automatically: last models picked with /model, newest first. */
   recentModels: z.array(z.string()).optional(),
+  /** Shell hooks: {"pre:bash": "...", "post:edit": "bun run typecheck", "post:*": "..."}. */
+  hooks: z.record(z.string()).optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z.object({ allow: z.array(z.string()).default([]) }).optional(),
@@ -62,6 +64,7 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     model: projectConfig.model ?? globalConfig.model,
     subagentModel: projectConfig.subagentModel ?? globalConfig.subagentModel,
     recentModels: globalConfig.recentModels,
+    hooks: { ...globalConfig.hooks, ...projectConfig.hooks },
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },
     permissions: {

@@ -6,6 +6,7 @@ import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
 import { shouldCompact, compact } from "./compact.js";
 import { Checkpoints } from "./checkpoints.js";
+import { hookFor, runHook } from "./hooks.js";
 import path from "node:path";
 import type { SessionStore } from "../session/store.js";
 
@@ -133,6 +134,8 @@ export interface AgentOptions {
   initialMessages?: ModelMessage[];
   /** Tool-iteration cap per send(); sub-agents run with a lower cap. */
   maxIterations?: number;
+  /** Shell hooks keyed "pre:<tool>"/"post:<tool>" (or "pre:*"/"post:*"). */
+  hooks?: Record<string, string>;
 }
 
 export class Agent {
@@ -260,11 +263,23 @@ export class Agent {
     return set;
   }
 
-  async *send(input: string): AsyncIterable<AgentEvent> {
+  async *send(
+    input: string,
+    images?: readonly { data: string; mediaType: string }[],
+  ): AsyncIterable<AgentEvent> {
     const abort = new AbortController();
     this.currentAbort = abort;
     const newMessages: ModelMessage[] = [];
-    const userMessage: ModelMessage = { role: "user", content: input };
+    const userMessage: ModelMessage =
+      images && images.length > 0
+        ? ({
+            role: "user",
+            content: [
+              { type: "text", text: input },
+              ...images.map((i) => ({ type: "image" as const, image: i.data, mediaType: i.mediaType })),
+            ],
+          } as ModelMessage)
+        : { role: "user", content: input };
     this.messages.push(userMessage);
     newMessages.push(userMessage);
     await this.opts.store?.ensureTitle(input);
@@ -551,6 +566,18 @@ export class Agent {
       }
     }
 
+    // A pre-hook exiting non-zero blocks the call; its output goes to the model.
+    const preHook = hookFor(this.opts.hooks, "pre", call.toolName);
+    if (preHook) {
+      const r = await runHook(preHook, call.toolName, input, this.opts.cwd);
+      if (r.code !== 0) {
+        return {
+          output: `Blocked by pre-hook (exit ${r.code}): ${r.output.trim().slice(0, 800) || "(no output)"}`,
+          isError: true,
+        };
+      }
+    }
+
     // Capture the file's pre-change state so /undo can restore this turn.
     if (def.permission === "write") {
       const p = (input as { path?: unknown })?.path;
@@ -611,6 +638,16 @@ export class Agent {
     if (error !== undefined) {
       if (ctx.abortSignal?.aborted) throw error;
       return { output: error instanceof Error ? error.message : String(error), isError: true };
+    }
+
+    // A failing post-hook appends its output (e.g. typecheck errors after an
+    // edit) so the model sees and fixes the fallout immediately.
+    const postHook = hookFor(this.opts.hooks, "post", call.toolName);
+    if (postHook) {
+      const r = await runHook(postHook, call.toolName, input, this.opts.cwd);
+      if (r.code !== 0) {
+        output += `\n[post-hook "${call.toolName}" failed (exit ${r.code})]:\n${r.output.trim().slice(0, 1500)}`;
+      }
     }
     return { output, isError: false };
   }

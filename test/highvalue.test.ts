@@ -119,6 +119,39 @@ describe("keyLooksLike", () => {
   });
 });
 
+describe("hooks", () => {
+  test("hookFor resolves specific over wildcard; runHook reports exit and output", async () => {
+    const { hookFor, runHook } = await import("../src/core/hooks.js");
+    const hooks = { "pre:bash": "specific", "pre:*": "wild", "post:edit": "p" };
+    expect(hookFor(hooks, "pre", "bash")).toBe("specific");
+    expect(hookFor(hooks, "pre", "edit")).toBe("wild");
+    expect(hookFor(hooks, "post", "edit")).toBe("p");
+    expect(hookFor(hooks, "post", "bash")).toBeUndefined();
+    expect(hookFor(undefined, "pre", "bash")).toBeUndefined();
+
+    const ok = await runHook("echo hook-ran", "bash", { command: "x" }, process.cwd());
+    expect(ok.code).toBe(0);
+    expect(ok.output).toContain("hook-ran");
+    const fail = await runHook("exit 3", "bash", {}, process.cwd());
+    expect(fail.code).toBe(3);
+  });
+});
+
+describe("models.dev provider catalog", () => {
+  test("parses only openai-compatible entries with endpoints", async () => {
+    const { parseProviderCatalog } = await import("../src/providers/modelsdev.js");
+    const out = parseProviderCatalog({
+      good: { npm: "@ai-sdk/openai-compatible", api: "https://api.good.ai/v1", name: "Good AI", env: "GOOD_KEY" },
+      envlist: { npm: "@ai-sdk/openai-compatible", api: "https://e.ai/v1", env: ["E_KEY", "ALT"] },
+      wrongsdk: { npm: "@ai-sdk/anthropic", api: "https://x.ai/v1" },
+      noapi: { npm: "@ai-sdk/openai-compatible" },
+    });
+    expect(out.map((p) => p.id).sort()).toEqual(["envlist", "good"]);
+    expect(out.find((p) => p.id === "good")?.envVar).toBe("GOOD_KEY");
+    expect(out.find((p) => p.id === "envlist")?.envVar).toBe("E_KEY");
+  });
+});
+
 describe("persistProviderKey", () => {
   test("writes and merges provider entries", async () => {
     const file = path.join(await tmpCwd(), "config.json");

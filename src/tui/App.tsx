@@ -10,6 +10,7 @@ import { allKnownModels, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
 import { PROVIDER_CATALOG, catalogEntry, keyLooksLike } from "../providers/catalog.js";
 import { discoverModels, formatModelLabel, listProviderModels, type DiscoveredModel } from "../providers/list-models.js";
+import { modelsDevProviders } from "../providers/modelsdev.js";
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
 import type { AskUser } from "../tools/question-tool.js";
@@ -102,7 +103,7 @@ function buildPickerItems(
 }
 
 type ConnectState =
-  | { step: "pick" }
+  | { step: "pick"; dynamic: import("../providers/modelsdev.js").ModelsDevProvider[] }
   | { step: "key"; id: string; label: string; baseURL?: string }
   | { step: "custom-name" }
   | { step: "custom-url"; id: string }
@@ -348,10 +349,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       const dirName = setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin";
       setTerminalTitle(`✶ ${(display ?? prompt).replace(/\s+/g, " ").slice(0, 40)} — aerin`);
       pushItem("user", redactSecrets(display ?? prompt));
-      // @path tokens attach the named files to the prompt (display stays clean).
-      const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
+      // @path tokens attach text files to the prompt and images as multimodal
+      // parts (display stays clean).
+      const expanded = await expandMentions(prompt, setup.cwd).catch(() => ({ text: prompt, images: [] }));
+      if (expanded.images.length > 0) {
+        pushItem("info", `  ⎿  attached ${expanded.images.map((i) => i.name).join(", ")}`);
+      }
       try {
-        for await (const event of setup.agent.send(expanded)) {
+        for await (const event of setup.agent.send(expanded.text, expanded.images)) {
           switch (event.type) {
             case "reasoning-delta": {
               setThinking(true);
@@ -543,7 +548,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       // Nothing connected at all — the fix is a provider, not a model list.
       setModelPicker(null);
       pushItem("info", "(no providers connected yet — pick one to connect first)");
-      setConnect({ step: "pick" });
+      void modelsDevProviders()
+        .catch(() => [])
+        .then((dynamic) => setConnect({ step: "pick", dynamic }));
     } else if (Object.keys(allKnownModels()).length > 0) {
       // Provider lists unreachable (offline?) — fall back to the models.dev
       // cache for the providers that have keys.
@@ -677,7 +684,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             await saveConnection(prov, key, catalogEntry(prov)?.baseURL);
             return;
           }
-          setConnect({ step: "pick" });
+          setConnect({ step: "pick", dynamic: await modelsDevProviders().catch(() => []) });
           return;
         }
         case "/status": {
@@ -1167,16 +1174,32 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <FilterSelect
             active={true}
             items={[
+              { label: "Featured", value: "__header_featured", header: true },
               ...PROVIDER_CATALOG.map((e) => ({
                 label: `${e.name}${resolveApiKey(e.id, setup.config) ? "  ✓ connected" : ""}`,
                 value: e.id,
               })),
               { label: "Custom OpenAI-compatible endpoint…", value: "__custom__" },
+              ...(connect.dynamic.length > 0
+                ? [{ label: `All providers — models.dev (${connect.dynamic.length})`, value: "__header_all", header: true }]
+                : []),
+              ...connect.dynamic
+                .filter((d) => !catalogEntry(d.id))
+                .map((d) => ({
+                  label: `${d.name}${setup.config.providers?.[d.id]?.apiKey ? "  ✓ connected" : ""}`,
+                  value: `dyn:${d.id}`,
+                })),
             ]}
             onCancel={() => setConnect(null)}
             onSelect={(v) => {
               if (v === "__custom__") {
                 setConnect({ step: "custom-name" });
+                return;
+              }
+              if (v.startsWith("dyn:")) {
+                const d = connect.dynamic.find((x) => `dyn:${x.id}` === v);
+                if (!d) return setConnect(null);
+                setConnect({ step: "key", id: d.id, label: d.name, baseURL: d.baseURL });
                 return;
               }
               const entry = catalogEntry(v);

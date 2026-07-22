@@ -44,7 +44,12 @@ export async function gitContext(cwd: string): Promise<string> {
   return `Git: branch ${branch}, ${dirty === 0 ? "clean" : `${dirty} changed file${dirty === 1 ? "" : "s"}`}${lastCommit ? `, last commit: ${lastCommit.slice(0, 80)}` : ""}`;
 }
 
-export async function buildSystemPrompt(cwd: string, modelId: string, skills: readonly Skill[] = []): Promise<string> {
+export async function buildSystemPrompt(
+  cwd: string,
+  modelId: string,
+  skills: readonly Skill[] = [],
+  namedAgents: readonly import("./agents.js").NamedAgent[] = [],
+): Promise<string> {
   const shell = detectShell();
   const agentsMd = await discoverAgentsMd(cwd);
   const git = await gitContext(cwd);
@@ -84,6 +89,14 @@ Output style:
     sections.push(
       `Available skills (load with the skill tool BEFORE starting a task one covers):\n${skills
         .map((s) => `- ${s.name}: ${s.description}`)
+        .join("\n")}`,
+    );
+  }
+
+  if (namedAgents.length > 0) {
+    sections.push(
+      `Named sub-agents (pass agent:"name" to the agent tool when their specialty matches):\n${namedAgents
+        .map((a) => `- ${a.name}: ${a.description}`)
         .join("\n")}`,
     );
   }

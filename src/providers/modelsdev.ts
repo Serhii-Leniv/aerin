@@ -25,7 +25,43 @@ interface ModelsDevModel {
   cost?: { input?: number; output?: number };
   limit?: { context?: number; output?: number };
 }
-type ModelsDevData = Record<string, { models?: Record<string, ModelsDevModel> }>;
+type ModelsDevData = Record<
+  string,
+  {
+    models?: Record<string, ModelsDevModel>;
+    name?: string;
+    npm?: string;
+    api?: string;
+    env?: string | string[];
+  }
+>;
+
+export interface ModelsDevProvider {
+  id: string;
+  name: string;
+  baseURL: string;
+  envVar?: string;
+}
+
+/**
+ * Providers from the registry that are safely routable through aerin's
+ * OpenAI-compatible adapter (they declare it as their npm adapter and expose
+ * an API endpoint) — the /connect "all providers" catalog.
+ */
+export function parseProviderCatalog(data: ModelsDevData): ModelsDevProvider[] {
+  const out: ModelsDevProvider[] = [];
+  for (const [id, p] of Object.entries(data)) {
+    if (p.npm !== "@ai-sdk/openai-compatible" || !p.api) continue;
+    const envVar = Array.isArray(p.env) ? p.env[0] : p.env;
+    out.push({ id, name: p.name ?? id, baseURL: p.api, ...(envVar ? { envVar } : {}) });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function modelsDevProviders(): Promise<ModelsDevProvider[]> {
+  const data = await fetchRegistry();
+  return data ? parseProviderCatalog(data) : [];
+}
 
 async function fetchRegistry(): Promise<ModelsDevData | undefined> {
   try {

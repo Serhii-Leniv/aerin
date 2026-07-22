@@ -15,16 +15,46 @@ describe("expandMentions", () => {
     const cwd = await tmpCwd();
     await fs.writeFile(path.join(cwd, "notes.md"), "remember the milk");
     const out = await expandMentions("look at @notes.md and @nonexistent.txt please", cwd);
-    expect(out).toContain("look at @notes.md and @nonexistent.txt please");
-    expect(out).toContain("[Attached file: notes.md]");
-    expect(out).toContain("remember the milk");
-    expect(out).not.toContain("[Attached file: nonexistent.txt]");
+    expect(out.text).toContain("look at @notes.md and @nonexistent.txt please");
+    expect(out.text).toContain("[Attached file: notes.md]");
+    expect(out.text).toContain("remember the milk");
+    expect(out.text).not.toContain("[Attached file: nonexistent.txt]");
+    expect(out.images).toEqual([]);
   });
 
   test("no mentions → prompt unchanged", async () => {
     const cwd = await tmpCwd();
-    expect(await expandMentions("plain question", cwd)).toBe("plain question");
-    expect(await expandMentions("email me a@b.com", cwd)).toBe("email me a@b.com");
+    expect((await expandMentions("plain question", cwd)).text).toBe("plain question");
+    expect((await expandMentions("email me a@b.com", cwd)).text).toBe("email me a@b.com");
+  });
+
+  test("image mentions become base64 attachments", async () => {
+    const cwd = await tmpCwd();
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    await fs.writeFile(path.join(cwd, "shot.png"), png);
+    const out = await expandMentions("what is wrong in @shot.png here", cwd);
+    expect(out.images).toHaveLength(1);
+    expect(out.images[0]?.mediaType).toBe("image/png");
+    expect(out.images[0]?.data).toBe(png.toString("base64"));
+    expect(out.text).not.toContain("[Attached file: shot.png]"); // not inlined as text
+  });
+});
+
+describe("named agents", () => {
+  test("discovers .aerin and .claude agents with frontmatter and body prompt", async () => {
+    const { discoverAgents } = await import("../src/core/agents.js");
+    const cwd = await tmpCwd();
+    const d = path.join(cwd, ".aerin", "agents");
+    await fs.mkdir(d, { recursive: true });
+    await fs.writeFile(
+      path.join(d, "reviewer.md"),
+      `---\nname: reviewer\ndescription: adversarial code reviewer\nmodel: groq/llama-3.3-70b-versatile\n---\n\nYou review code harshly.`,
+    );
+    const agents = await discoverAgents(cwd);
+    expect(agents).toHaveLength(1);
+    expect(agents[0]?.name).toBe("reviewer");
+    expect(agents[0]?.model).toBe("groq/llama-3.3-70b-versatile");
+    expect(agents[0]?.systemPrompt).toBe("You review code harshly.");
   });
 });
 

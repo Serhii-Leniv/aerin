@@ -28,11 +28,16 @@ export interface AgentToolDeps {
   getModel: () => { model: LanguageModel; modelId: string };
   /** Optional cheaper model override, from config.subagentModel. */
   getSubagentModel?: () => { model: LanguageModel; modelId: string };
+  /** Named custom agents (.aerin/agents/*.md) selectable via input.agent. */
+  namedAgents?: readonly import("../core/agents.js").NamedAgent[];
+  /** Resolve a named agent's model override. */
+  resolveModelFn?: (id: string) => LanguageModel;
 }
 
 interface AgentToolInput {
   description: string;
   prompt: string;
+  agent?: string;
 }
 
 let subagentCounter = 0;
@@ -54,18 +59,38 @@ export function createAgentTool(deps: AgentToolDeps): ToolDef<z.ZodTypeAny> {
             "The sub-agent has read-only access (read, ls, glob, grep, websearch, webfetch) " +
             "and returns a single text report.",
         ),
+      agent: z
+        .string()
+        .optional()
+        .describe("Named custom agent to use (listed in the system prompt); omit for the default researcher"),
     }),
     permission: "read",
-    summarize: (input) => `Agent(${(input as AgentToolInput).description})`,
+    summarize: (input) => {
+      const i = input as AgentToolInput;
+      return `Agent(${i.agent ? `${i.agent}: ` : ""}${i.description})`;
+    },
     async execute(rawInput, ctx: ToolContext): Promise<string> {
       const input = rawInput as AgentToolInput;
-      const { model, modelId } = deps.getSubagentModel?.() ?? deps.getModel();
+      const named = input.agent ? deps.namedAgents?.find((a) => a.name === input.agent) : undefined;
+      if (input.agent && !named) {
+        const known = deps.namedAgents?.map((a) => a.name).join(", ") || "none";
+        throw new Error(`Unknown named agent: ${input.agent}. Available: ${known}`);
+      }
+      let { model, modelId } = deps.getSubagentModel?.() ?? deps.getModel();
+      if (named?.model && deps.resolveModelFn) {
+        model = deps.resolveModelFn(named.model);
+        modelId = named.model;
+      }
       const id = ctx.toolCallId ?? `subagent-${++subagentCounter}`;
 
       const sub = new Agent({
         model,
         modelId,
-        systemPrompt: buildSubagentSystemPrompt(ctx.cwd),
+        // A named agent's own prompt leads; the standard sub-agent rules
+        // (read-only, report contract) always apply underneath.
+        systemPrompt: named
+          ? `${named.systemPrompt}\n\n${buildSubagentSystemPrompt(ctx.cwd)}`
+          : buildSubagentSystemPrompt(ctx.cwd),
         tools: subagentTools(),
         policy: new PermissionPolicy([], false),
         // Belt-and-braces: every sub-agent tool is read-tier and never asks,
