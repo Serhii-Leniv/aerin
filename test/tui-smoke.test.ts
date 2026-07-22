@@ -40,7 +40,9 @@ describe("tui smoke", () => {
         });
       });
 
-      expect(result.out).toContain("█████╗"); // the wordmark rendered
+      // eslint-disable-next-line no-control-regex
+      const plain = result.out.replace(/\x1b\[[0-9;]*m/g, ""); // the wordmark is gradient-styled per glyph
+      expect(plain).toContain("█████╗"); // the wordmark rendered
       expect(result.out).toContain("❯"); // the input prompt rendered
       expect(result.code).toBe(0); // clean exit through the /exit path
     },

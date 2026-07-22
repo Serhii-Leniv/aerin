@@ -28,6 +28,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
+import { gradientBanner, gradientLine } from "../terminal/gradient.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -161,7 +162,7 @@ function paint(s: string, hex: string, bold = false): string {
 /** "● " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
   const lines = text.split("\n");
-  return ["● " + (lines[0] ?? ""), ...lines.slice(1).map((l) => "  " + l)].join("\n");
+  return [paint("●", C.accentBright) + " " + (lines[0] ?? ""), ...lines.slice(1).map((l) => "  " + l)].join("\n");
 }
 
 /** One-line result stat for the result line: short outputs verbatim, long ones as a count. */
@@ -219,8 +220,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // it scrolls away as the conversation grows. Live model/ctx stay in the footer.
     const art =
       size.columns >= MIN_LOGO_COLUMNS
-        ? LOGO.map((r) => paint(r, C.accentBright, true)).join("\n")
-        : paint("✦ Aerin", C.accentBright, true);
+        ? gradientBanner(LOGO, C.heroGradient).join("\n")
+        : gradientLine("✦ Aerin", C.heroGradient);
     const info =
       paint(`v${VERSION} · `, C.dim) + paint(setup.modelId, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
     return [

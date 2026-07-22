@@ -28,6 +28,8 @@ export const C = {
   orange: "#ff9e64",
   /** Default foreground — blue-tinted, carries the navy key into prose. */
   fg: "#c0caf5",
+  /** Hero gradient (wordmark, brand moments): royal → ice → periwinkle aurora. */
+  heroGradient: ["#4d8bff", "#7dcfff", "#bb9af7"] as readonly string[],
 };
 
 /** Same roles re-picked for white/light terminal backgrounds — true navy. */
@@ -41,6 +43,7 @@ const LIGHT: typeof C = {
   magenta: "#7847bd",
   orange: "#b15c00",
   fg: "#2e3f6e", // navy-tinted ink
+  heroGradient: ["#1e3a8a", "#2e7de9", "#6d28d9"] as readonly string[],
 };
 
 /** Swap the palette for a light terminal background. Call before first render. */
