@@ -197,6 +197,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [recentModels, setRecentModels] = useState<string[]>(setup.config.recentModels ?? []);
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
   const [scrollOffset, setScrollOffset] = useState(0); // transcript items hidden from the bottom
+  const [queued, setQueued] = useState<string[]>([]); // messages typed while the agent was working
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
   const [reasoningTail, setReasoningTail] = useState("");
@@ -385,6 +386,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         settleDialogs();
         setSubagents(new Map()); // clear stragglers on abort/error
       }
+      // Drain one queued message; its own turn will drain the next.
+      setQueued((q) => {
+        const [next, ...rest] = q;
+        if (next !== undefined) {
+          setTimeout(() => {
+            if (next.startsWith("/")) runCommand(next);
+            else void runTurn(next);
+          }, 0);
+        }
+        return rest;
+      });
     },
     [setup, pushItem, flushStream],
   );
@@ -635,15 +647,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const onSubmit = useCallback(
     (value: string) => {
       const line = value.trim();
-      if (!line || workingRef.current) return;
+      if (!line) return;
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
+      if (workingRef.current) {
+        setQueued((q) => [...q, line]);
+        pushItem("info", `(queued — sends when this turn finishes: ${line.slice(0, 60)})`);
+        return;
+      }
       if (line.startsWith("/")) {
         runCommand(line);
       } else {
         void runTurn(line);
       }
     },
-    [runCommand, runTurn],
+    [runCommand, runTurn, pushItem],
   );
 
   // A pending dialog blocks the agent loop on an unresolved promise — resolve
@@ -704,14 +721,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inputActive =
-    !working &&
-    !permission &&
-    !modelPicker &&
-    !sessionPicker &&
-    !question &&
-    !helpMenu &&
-    !connect;
+  // The input stays visible and typable even while the agent works — messages
+  // submitted mid-turn are queued and sent when the turn finishes. Only modal
+  // dialogs take the input away.
+  const inputActive = !permission && !modelPicker && !sessionPicker && !question && !helpMenu && !connect;
 
   const allCommands = [
     ...SLASH_COMMANDS,
@@ -1089,6 +1102,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {fmtTokens(stats.inTok)} in / {fmtTokens(stats.outTok)} out
           {stats.cost > 0 ? ` · ~$${stats.cost.toFixed(4)}` : ""}
           {planMode ? " · PLAN (read-only)" : ""}
+          {queued.length > 0 ? ` · ${queued.length} queued` : ""}
           {scrollOffset > 0 ? ` · ↑ scrolled (PgDn to follow)` : ""}
           {exitArmed ? " · press Ctrl+C again to exit" : ""}
         </Text>
