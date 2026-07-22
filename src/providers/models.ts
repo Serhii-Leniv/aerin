@@ -1,0 +1,45 @@
+/**
+ * Static model metadata for context-window management and cost display.
+ * Prices are USD per million tokens and are approximate — verify against
+ * each provider's pricing page. Unknown models fall back to DEFAULT_MODEL_INFO.
+ */
+
+export interface ModelInfo {
+  contextWindow: number;
+  maxOutput: number;
+  inputPerMTok?: number;
+  outputPerMTok?: number;
+}
+
+export const DEFAULT_MODEL_INFO: ModelInfo = {
+  contextWindow: 200_000,
+  maxOutput: 8_192,
+};
+
+export const MODEL_TABLE: Record<string, ModelInfo> = {
+  // Anthropic (verified 2026-07)
+  "anthropic/claude-opus-4-8": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 5, outputPerMTok: 25 },
+  "anthropic/claude-opus-4-7": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 5, outputPerMTok: 25 },
+  "anthropic/claude-sonnet-5": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 3, outputPerMTok: 15 },
+  "anthropic/claude-sonnet-4-6": { contextWindow: 1_000_000, maxOutput: 128_000, inputPerMTok: 3, outputPerMTok: 15 },
+  "anthropic/claude-haiku-4-5": { contextWindow: 200_000, maxOutput: 64_000, inputPerMTok: 1, outputPerMTok: 5 },
+  // OpenAI / Google / OpenRouter / Ollama entries are best-effort; extend as needed.
+  "openai/gpt-4.1": { contextWindow: 1_000_000, maxOutput: 32_768 },
+  "openai/gpt-4o": { contextWindow: 128_000, maxOutput: 16_384 },
+  "google/gemini-2.5-pro": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  "google/gemini-2.5-flash": { contextWindow: 1_000_000, maxOutput: 65_536 },
+};
+
+export function modelInfo(modelId: string): ModelInfo {
+  return MODEL_TABLE[modelId] ?? DEFAULT_MODEL_INFO;
+}
+
+export function estimateCostUsd(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+): number | undefined {
+  const info = modelInfo(modelId);
+  if (info.inputPerMTok === undefined || info.outputPerMTok === undefined) return undefined;
+  return (inputTokens / 1e6) * info.inputPerMTok + (outputTokens / 1e6) * info.outputPerMTok;
+}

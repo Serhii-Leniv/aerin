@@ -1,0 +1,43 @@
+import React from "react";
+import { render } from "ink";
+import { setupAgent, stopMcpServers } from "../cli.js";
+import { loadConfig } from "../config/config.js";
+import { resolveModel } from "../providers/registry.js";
+import type { OnPermission } from "../core/events.js";
+import { App, type TuiSetup } from "./App.js";
+
+interface TuiFlags {
+  model?: string;
+  yolo: boolean;
+  continue: boolean;
+  resume?: string;
+  allowOutsideCwd: boolean;
+  cwd?: string;
+  mcp: boolean;
+}
+
+export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<void> {
+  // The Agent needs onPermission at construction, but the dialog only exists
+  // once the App mounts — so route through a swappable ref.
+  const onPermissionRef: { current: OnPermission } = {
+    current: async () => ({ kind: "deny", reason: "UI not ready" }),
+  };
+
+  const setup = await setupAgent(flags, (req) => onPermissionRef.current(req));
+  const { config } = await loadConfig(setup.cwd);
+
+  const tuiSetup: TuiSetup = {
+    agent: setup.agent,
+    modelId: setup.modelId,
+    cwd: setup.cwd,
+    warnings: setup.warnings,
+    onPermissionRef,
+    resolveModelFn: (id) => resolveModel(id, config),
+  };
+
+  const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
+    exitOnCtrlC: false,
+  });
+  await instance.waitUntilExit();
+  await stopMcpServers(setup.mcpConnections);
+}

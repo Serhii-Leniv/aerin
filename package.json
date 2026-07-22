@@ -1,0 +1,68 @@
+{
+  "name": "aerin",
+  "version": "0.0.1",
+  "description": "Aerin — an open-source CLI coding agent. Multi-provider, MCP-capable, with a terminal UI.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "aerin": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "dev": "bun run src/index.ts",
+    "check:no-bun-globals": "grep -rn \"Bun\\.\" src && exit 1 || exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bohdan-stampli/aerin.git"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "coding-agent",
+    "llm",
+    "anthropic",
+    "openai",
+    "mcp",
+    "terminal"
+  ],
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.0",
+    "@ai-sdk/google": "^2.0.0",
+    "@ai-sdk/openai": "^2.0.0",
+    "@ai-sdk/openai-compatible": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@openrouter/ai-sdk-provider": "^1.0.0",
+    "ai": "^5.0.0",
+    "commander": "^14.0.0",
+    "cross-spawn": "^7.0.6",
+    "diff": "^8.0.0",
+    "env-paths": "^3.0.0",
+    "fast-glob": "^3.3.3",
+    "ignore": "^7.0.0",
+    "ink": "^6.0.0",
+    "marked": "^15.0.0",
+    "marked-terminal": "^7.3.0",
+    "react": "^19.0.0",
+    "tree-kill": "^1.2.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/marked-terminal": "^6.1.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.8.0"
+  }
+}

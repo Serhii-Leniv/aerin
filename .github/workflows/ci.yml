@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run check:no-bun-globals
+        shell: bash
+      - run: bun test
+      - run: bun run build
+      # Node smoke test: the published artifact must run under plain Node.
+      - run: node dist/index.js --version
+      - run: npm pack
+      - name: Install tarball in a clean directory and run it
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack-test" && cd "$RUNNER_TEMP/pack-test"
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE"/aerin-*.tgz
+          ./node_modules/.bin/aerin --version
