@@ -41,6 +41,18 @@ export function toPlainJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/**
+ * Drop reasoning ("thinking") parts from an assistant message before storing
+ * it. They are streamed to the UI live, but replaying them in history breaks
+ * strict providers (Groq rejects `reasoning_content` outright), and no
+ * provider we call requires them back.
+ */
+export function stripReasoningParts(m: ModelMessage): ModelMessage {
+  if (m.role !== "assistant" || !Array.isArray(m.content)) return m;
+  const content = (m.content as { type?: string }[]).filter((p) => p?.type !== "reasoning");
+  return { ...m, content } as ModelMessage;
+}
+
 /** Providers throw strings, Errors, and bare objects — normalize to a readable message. */
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -303,7 +315,10 @@ export class Agent {
         if (sawText) yield { type: "message-end" };
 
         const response = await result.response;
-        const sanitized = response.messages.map((m) => toPlainJson(m));
+        const sanitized = response.messages
+          .map((m) => toPlainJson(stripReasoningParts(m)))
+          // A message that was ONLY reasoning is now empty — drop it entirely.
+          .filter((m) => !(m.role === "assistant" && Array.isArray(m.content) && m.content.length === 0));
         this.messages.push(...sanitized);
         newMessages.push(...sanitized);
 

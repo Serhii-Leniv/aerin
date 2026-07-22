@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
-import { isRetryableError, pruneOldToolResults } from "../src/core/agent.js";
+import { isRetryableError, pruneOldToolResults, stripReasoningParts } from "../src/core/agent.js";
 import { startJob, getJob, bashOutputTool } from "../src/tools/bash-jobs.js";
 
 describe("isRetryableError", () => {
@@ -16,6 +16,28 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("401 invalid api key"))).toBe(false);
     expect(isRetryableError(new Error("model not found"))).toBe(false);
     expect(isRetryableError(new Error("invalid request: messages must not be empty"))).toBe(false);
+  });
+});
+
+describe("stripReasoningParts", () => {
+  test("removes reasoning, keeps text and tool calls", () => {
+    const m = {
+      role: "assistant",
+      content: [
+        { type: "reasoning", text: "thinking..." },
+        { type: "text", text: "answer" },
+        { type: "tool-call", toolCallId: "1", toolName: "read", input: {} },
+      ],
+    } as unknown as ModelMessage;
+    const out = stripReasoningParts(m);
+    expect((out.content as { type: string }[]).map((p) => p.type)).toEqual(["text", "tool-call"]);
+  });
+
+  test("leaves string content and other roles alone", () => {
+    const user = { role: "user", content: "hi" } as ModelMessage;
+    expect(stripReasoningParts(user)).toBe(user);
+    const plain = { role: "assistant", content: "just text" } as ModelMessage;
+    expect(stripReasoningParts(plain)).toBe(plain);
   });
 });
 
