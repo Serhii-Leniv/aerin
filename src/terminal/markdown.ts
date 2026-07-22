@@ -21,13 +21,14 @@ const dim = wrap(() => C.dim); // blockquotes, hr
 const yellow = wrap(() => C.warn); // inline code
 
 // Syntax theme for fenced code (highlight.js token names).
+const pinkPlain = wrap(() => C.accentBright);
 const green = wrap(() => C.ok);
 const purple = wrap(() => C.magenta);
 const orange = wrap(() => C.orange);
 const fg = wrap(() => C.fg);
 const id = (s: string) => s;
 const SYNTAX_THEME = {
-  keyword: purple,
+  keyword: pinkPlain,
   built_in: cyan,
   type: purple,
   literal: purple,
@@ -41,7 +42,7 @@ const SYNTAX_THEME = {
   comment: dim,
   doctag: dim,
   meta: dim,
-  tag: purple,
+  tag: pinkPlain,
   name: cyan,
   attr: green,
   attribute: green,
