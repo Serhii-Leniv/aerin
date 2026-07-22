@@ -184,6 +184,11 @@ export class Agent {
 
   async clear(): Promise<void> {
     this.messages = [];
+    // A cleared session is a fresh start — the cost/token meter resets with it.
+    this.lastInputTokens = 0;
+    this.totalInputTokens = 0;
+    this.totalOutputTokens = 0;
+    this.totalCostUsd = 0;
     await this.opts.store?.rewrite([]);
   }
 

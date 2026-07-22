@@ -398,7 +398,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // Render markdown live while streaming — partial constructs (an unclosed
     // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
     // The ▌ cursor marks where new text lands.
-    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())) + "\x1b[38;2;0;242;254m▌\x1b[0m");
+    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())) + "\x1b[38;2;92;200;255m▌\x1b[0m");
   }, []);
 
   const runTurn = useCallback(
@@ -729,6 +729,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           await setup.agent.clear();
           setItems([]); // fully dynamic viewport — emptying state empties the screen
           setCtxTokens(0);
+          setStats({ inTok: 0, outTok: 0, cost: 0 });
           setTodos([]);
           return;
         }

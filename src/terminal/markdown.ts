@@ -12,9 +12,9 @@ import { markedTerminal } from "marked-terminal";
 const colorEnabled = Boolean(process.env["FORCE_COLOR"]) || process.stdout.isTTY === true;
 const wrap = (codes: string) => (s: string) => (colorEnabled ? `\x1b[${codes}m${s}\x1b[0m` : s);
 const pink = wrap("1;38;2;255;119;169"); // headings — brand pink, bold
-const cyan = wrap("38;2;0;242;254"); // links
+const cyan = wrap("38;2;92;200;255"); // links — sky cyan (theme accent)
 const dim = wrap("38;2;98;114;164"); // blockquotes, hr
-const yellow = wrap("38;2;241;250;140"); // inline code
+const yellow = wrap("38;2;230;200;110"); // inline code — soft gold (theme warn)
 
 // Synthwave syntax theme for fenced code (highlight.js token names).
 const pinkPlain = wrap("38;2;255;119;169");
