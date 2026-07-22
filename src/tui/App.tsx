@@ -28,7 +28,6 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { gradientBanner, gradientLine } from "../terminal/gradient.js";
 import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
@@ -221,8 +220,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const bannerItem = (model: string, key = 0): TranscriptItem => {
     const art =
       size.columns >= MIN_LOGO_COLUMNS
-        ? gradientBanner(LOGO, C.heroGradient).join("\n")
-        : gradientLine("✦ Aerin", C.heroGradient);
+        ? LOGO.map((row) => paint(row, C.accentBright, true)).join("\n")
+        : paint("✦ Aerin", C.accentBright, true);
     const info =
       paint(`v${VERSION} · `, C.dim) + paint(model, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
     return { key, kind: "assistant", text: `${art}\n${info}` };
