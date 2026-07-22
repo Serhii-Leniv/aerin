@@ -13,8 +13,10 @@ An open-source CLI coding agent — in the spirit of Claude Code and opencode, s
 ## Install
 
 ```sh
-npm install -g aerin     # or: npx aerin
+npm install -g aerin-agent     # or: npx aerin-agent
 ```
+
+The installed command is `aerin`.
 
 Requires Node 20+.
 
