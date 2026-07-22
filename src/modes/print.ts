@@ -21,6 +21,15 @@ export async function runPrint(flags: PrintFlags, prompt: string): Promise<void>
   );
   for (const w of setup.warnings) process.stderr.write(`warning: ${w}\n`);
 
+  if (setup.modelUnavailable) {
+    process.stderr.write(
+      `error: ${setup.modelUnavailable}\nNon-interactive mode needs a working model — pass -m provider/model-id or fix your config.\n`,
+    );
+    process.exitCode = 1;
+    await stopMcpServers(setup.mcpConnections);
+    return;
+  }
+
   try {
     for await (const event of setup.agent.send(prompt)) {
       switch (event.type) {

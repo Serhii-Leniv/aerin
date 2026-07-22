@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { Agent } from "./core/agent.js";
 import type { OnPermission } from "./core/events.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
@@ -7,7 +7,7 @@ import { builtinTools } from "./tools/index.js";
 import { createAgentTool } from "./tools/agent-tool.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
-import { resolveModel, fallbackModelId } from "./providers/registry.js";
+import { resolveModel, providersWithKeys } from "./providers/registry.js";
 import { detectOllamaModel } from "./providers/list-models.js";
 import { GLOBAL_CONFIG_FILE } from "./config/paths.js";
 import { SessionStore } from "./session/store.js";
@@ -35,6 +35,25 @@ export interface AgentSetup {
   modelId: string;
   cwd: string;
   config: import("./config/config.js").AerinConfig;
+  /** Set when no model could be resolved; the agent holds an inert stub that
+   *  makes no requests until the user picks a model with /model. */
+  modelUnavailable?: string;
+}
+
+/** Inert placeholder: errors on use, so nothing is ever called (or billed)
+ *  until the user explicitly picks a model. */
+function unavailableModel(modelId: string, reason: string): LanguageModel {
+  const fail = (): never => {
+    throw new Error(`No model selected — ${modelId} is unavailable (${reason}). Pick one with /model.`);
+  };
+  return {
+    specificationVersion: "v2",
+    provider: "none",
+    modelId,
+    supportedUrls: {},
+    doGenerate: async () => fail(),
+    doStream: async () => fail(),
+  } as unknown as LanguageModel;
 }
 
 /** First-run guidance shown when no model provider is usable at all. */
@@ -66,21 +85,29 @@ export async function setupAgent(
   const warnings: string[] = [];
 
   let modelId = flags.model ?? config.model ?? DEFAULT_MODEL;
-  let model: import("ai").LanguageModel;
+  let model: LanguageModel;
+  let modelUnavailable: string | undefined;
   try {
     model = resolveModel(modelId, config);
   } catch (err) {
-    // An explicitly requested model (-m) fails loud. A configured/default one
-    // falls back to any provider with a key — or a running Ollama — so startup
-    // never dead-ends before the user can /model-switch.
+    // An explicitly requested model (-m) fails loud. For a configured/default
+    // one, never auto-pick a PAID model — that spends money the user didn't
+    // agree to. Free local Ollama is the only automatic fallback; otherwise
+    // the agent starts with an inert stub and the user must /model-pick.
     if (flags.model) throw err;
-    const fallback = fallbackModelId(config) ?? (await detectOllamaModel(config));
-    if (!fallback || fallback === modelId) throw onboardingError(err);
-    warnings.push(
-      `${modelId} is unavailable (${err instanceof Error ? err.message : err}) — using ${fallback} instead. Use /model to switch.`,
-    );
-    modelId = fallback;
-    model = resolveModel(modelId, config);
+    const reason = err instanceof Error ? err.message : String(err);
+    const ollama = await detectOllamaModel(config);
+    if (ollama && ollama !== modelId) {
+      warnings.push(`${modelId} is unavailable (${reason}) — using local ${ollama} (free). Use /model to switch.`);
+      modelId = ollama;
+      model = resolveModel(modelId, config);
+    } else if (providersWithKeys(config).length > 0) {
+      modelUnavailable = reason;
+      model = unavailableModel(modelId, reason);
+      warnings.push(`${modelId} is unavailable (${reason}). No requests will be made until you pick a model with /model.`);
+    } else {
+      throw onboardingError(err);
+    }
   }
   let mcpConnections: McpConnection[] = [];
   const tools = builtinTools();
@@ -139,7 +166,15 @@ export async function setupAgent(
     }),
   );
 
-  return { agent, mcpConnections, warnings, modelId, cwd, config };
+  return {
+    agent,
+    mcpConnections,
+    warnings,
+    modelId,
+    cwd,
+    config,
+    ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
+  };
 }
 
 export async function main(argv: string[]): Promise<void> {

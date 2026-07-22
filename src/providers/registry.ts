@@ -26,25 +26,9 @@ export function resolveApiKey(provider: string, config: AerinConfig): string | u
   return fromEnv ?? config.providers?.[provider]?.apiKey;
 }
 
-/**
- * Sensible default model per provider, used when the configured model's
- * provider has no API key and we need somewhere to fall back to. Ollama is
- * excluded: it always "resolves" (no key), but we can't cheaply tell whether
- * it is actually running.
- */
-const FALLBACK_DEFAULTS: [provider: string, modelId: string][] = [
-  ["anthropic", "anthropic/claude-opus-4-8"],
-  ["openai", "openai/gpt-4.1"],
-  ["google", "google/gemini-flash-latest"],
-  ["openrouter", "openrouter/openai/gpt-4o-mini"],
-];
-
-/** First provider with a usable API key, as a full "provider/model-id" — or undefined. */
-export function fallbackModelId(config: AerinConfig): string | undefined {
-  for (const [provider, modelId] of FALLBACK_DEFAULTS) {
-    if (resolveApiKey(provider, config)) return modelId;
-  }
-  return undefined;
+/** Key-requiring providers that currently have a usable key. */
+export function providersWithKeys(config: AerinConfig): string[] {
+  return Object.keys(PROVIDERS).filter((p) => PROVIDERS[p]?.needsKey && resolveApiKey(p, config));
 }
 
 /**

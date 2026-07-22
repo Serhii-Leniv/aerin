@@ -22,6 +22,8 @@ export interface TuiSetup {
   onPermissionRef: { current: OnPermission };
   resolveModelFn: (id: string) => LanguageModel;
   config: AerinConfig;
+  /** Set when startup could not resolve a model; forces the picker open first. */
+  modelUnavailable?: string;
 }
 
 /**
@@ -343,7 +345,13 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   });
 
   useEffect(() => {
-    if (props.initialPrompt) void runTurn(props.initialPrompt);
+    if (setup.modelUnavailable) {
+      // No usable model — make the user pick one before anything can be sent
+      // (never auto-select a paid model on their behalf).
+      void handleCommand("/model");
+    } else if (props.initialPrompt) {
+      void runTurn(props.initialPrompt);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig, persistProjectRule } from "../src/config/config.js";
-import { fallbackModelId, PROVIDERS } from "../src/providers/registry.js";
+import { providersWithKeys, PROVIDERS } from "../src/providers/registry.js";
 import { truncateOutput, MAX_OUTPUT_LINES } from "../src/tools/types.js";
 
 async function tmpCwd(): Promise<string> {
@@ -56,7 +56,7 @@ describe("config", () => {
   });
 });
 
-describe("fallbackModelId", () => {
+describe("providersWithKeys", () => {
   function withoutProviderEnv<T>(fn: () => T): T {
     const saved = new Map<string, string | undefined>();
     for (const meta of Object.values(PROVIDERS)) {
@@ -75,20 +75,18 @@ describe("fallbackModelId", () => {
     }
   }
 
-  test("returns undefined when no provider has a key", () => {
+  test("empty when no provider has a key", () => {
     withoutProviderEnv(() => {
-      expect(fallbackModelId({})).toBeUndefined();
+      expect(providersWithKeys({})).toEqual([]);
     });
   });
 
-  test("picks the first provider with a configured key", () => {
+  test("lists exactly the providers with configured keys", () => {
     withoutProviderEnv(() => {
-      expect(fallbackModelId({ providers: { openrouter: { apiKey: "sk-or-x" } } })).toBe(
-        "openrouter/openai/gpt-4o-mini",
-      );
+      expect(providersWithKeys({ providers: { openrouter: { apiKey: "sk-or-x" } } })).toEqual(["openrouter"]);
       expect(
-        fallbackModelId({ providers: { openrouter: { apiKey: "x" }, openai: { apiKey: "y" } } }),
-      ).toBe("openai/gpt-4.1");
+        providersWithKeys({ providers: { openrouter: { apiKey: "x" }, openai: { apiKey: "y" } } }).sort(),
+      ).toEqual(["openai", "openrouter"]);
     });
   });
 });

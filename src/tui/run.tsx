@@ -32,6 +32,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     onPermissionRef,
     resolveModelFn: (id) => resolveModel(id, setup.config),
     config: setup.config,
+    ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),
   };
 
   const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
