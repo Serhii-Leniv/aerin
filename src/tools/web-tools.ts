@@ -11,6 +11,49 @@ function withTimeout(signal: AbortSignal | undefined): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
+/**
+ * SSRF guard: webfetch auto-runs (read tier), so it must never reach
+ * localhost, private ranges, or cloud metadata endpoints. Checked on the
+ * requested URL and re-checked on the final URL after redirects.
+ */
+export function assertPublicHttpUrl(raw: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`Not a valid URL: ${raw}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are supported.");
+  }
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    throw new Error(`Refusing to fetch internal host: ${host}`);
+  }
+  // IPv4 literal checks
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (
+      a === 127 ||
+      a === 10 ||
+      a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) // link-local incl. cloud metadata 169.254.169.254
+    ) {
+      throw new Error(`Refusing to fetch private/link-local address: ${host}`);
+    }
+  }
+  // IPv6 literal checks
+  if (host.includes(":")) {
+    if (host === "::1" || host === "::" || /^f[cd]/i.test(host) || /^fe[89ab]/i.test(host)) {
+      throw new Error(`Refusing to fetch private IPv6 address: ${host}`);
+    }
+  }
+  return url;
+}
+
 /** Crude but dependency-free HTML → readable text. */
 export function htmlToText(html: string): string {
   return html
@@ -43,13 +86,13 @@ export const webFetchTool: ToolDef<z.ZodTypeAny> = {
   permission: "read",
   summarize: (i) => `Fetch(${i.url})`,
   async execute(input, ctx) {
-    const url = String(input.url);
-    if (!/^https?:\/\//i.test(url)) throw new Error("Only http(s) URLs are supported.");
+    const url = assertPublicHttpUrl(String(input.url)).toString();
     const res = await fetch(url, {
       headers: { "user-agent": UA, accept: "text/html,application/json,text/plain,*/*" },
       signal: withTimeout(ctx.abortSignal),
       redirect: "follow",
     });
+    assertPublicHttpUrl(res.url || url); // redirects must not tunnel inside
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
     const contentType = res.headers.get("content-type") ?? "";
     const body = (await res.text()).slice(0, MAX_TEXT_CHARS);

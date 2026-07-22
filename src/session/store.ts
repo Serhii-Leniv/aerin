@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { ModelMessage } from "ai";
 import { sessionsDir } from "../config/paths.js";
+import { redactSecrets } from "../terminal/format.js";
 
 /**
  * One JSONL file per session: a meta header line followed by one ModelMessage
@@ -143,7 +144,8 @@ export class SessionStore {
 
   async append(messages: ModelMessage[]): Promise<void> {
     if (messages.length === 0) return;
-    const lines = messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
+    // Key-shaped strings never land on disk (tool output of `cat .env` etc.).
+    const lines = messages.map((m) => redactSecrets(JSON.stringify(m))).join("\n") + "\n";
     await fs.appendFile(this.file, lines, "utf8");
   }
 
@@ -151,7 +153,7 @@ export class SessionStore {
   async rewrite(messages: ModelMessage[]): Promise<void> {
     const raw = await fs.readFile(this.file, "utf8");
     const metaLine = raw.split("\n")[0] ?? "";
-    const lines = messages.map((m) => JSON.stringify(m)).join("\n");
+    const lines = messages.map((m) => redactSecrets(JSON.stringify(m))).join("\n");
     await fs.writeFile(this.file, metaLine + "\n" + (lines ? lines + "\n" : ""), "utf8");
   }
 }

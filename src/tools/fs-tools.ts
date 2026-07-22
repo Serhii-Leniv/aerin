@@ -21,6 +21,21 @@ function assertInsideCwd(abs: string, ctx: ToolContext): void {
   }
 }
 
+const SENSITIVE_RE =
+  /[\\/](\.ssh|\.aws|\.gnupg|\.azure|\.kube|\.netrc|\.npmrc|\.git-credentials|id_rsa[^\\/]*|id_ed25519[^\\/]*|credentials)([\\/]|$)/i;
+
+/** Reads auto-run (read tier) — credential-shaped paths outside the workspace are off limits. */
+export function assertReadable(abs: string, ctx: ToolContext): void {
+  if (ctx.allowOutsideCwd) return;
+  const rel = path.relative(path.resolve(ctx.cwd), abs);
+  const outside = rel.startsWith("..") || path.isAbsolute(rel);
+  if (outside && SENSITIVE_RE.test(abs)) {
+    throw new Error(
+      `Refusing to read credential-like path outside the working directory (${abs}). Re-run aerin with --allow-outside-cwd if this is intentional.`,
+    );
+  }
+}
+
 /** Detect dominant line ending so edits preserve the file's existing style. */
 function detectEol(text: string): "\r\n" | "\n" {
   const crlf = (text.match(/\r\n/g) ?? []).length;
@@ -45,6 +60,7 @@ export const readTool: ToolDef<z.ZodTypeAny> = {
   summarize: (i) => `Read(${i.path})`,
   async execute(input, ctx) {
     const abs = resolvePath(input.path, ctx);
+    assertReadable(abs, ctx);
     const buf = await fs.readFile(abs);
     if (buf.subarray(0, 8000).includes(0)) {
       throw new Error(`${input.path} appears to be a binary file`);
@@ -181,6 +197,7 @@ export const lsTool: ToolDef<z.ZodTypeAny> = {
   summarize: (i) => `List(${i.path ?? "."})`,
   async execute(input, ctx) {
     const abs = resolvePath(input.path ?? ".", ctx);
+    assertReadable(abs, ctx);
     const entries = await fs.readdir(abs, { withFileTypes: true });
     const out = entries
       .sort((a, b) => a.name.localeCompare(b.name))

@@ -266,6 +266,10 @@ export class Agent {
           yield { type: "compaction", preTokens: pre };
           await this.compactNow();
           this.lastInputTokens = 0;
+          // compactNow rewrote the session file with the compacted history,
+          // which already contains this turn's messages so far — appending
+          // them again in the finally would duplicate and resurrect them.
+          newMessages.length = 0;
         }
 
         const toolCalls: { toolCallId: string; toolName: string; input: unknown }[] = [];
@@ -497,7 +501,6 @@ export class Agent {
       };
     }
     if (policyDecision === "ask") {
-      yield { type: "permission-request", id: call.toolCallId, name: call.toolName, summary };
       const preview = def.preview ? await def.preview(input, ctx).catch(() => undefined) : undefined;
       const decision = await this.opts.onPermission({
         tool: call.toolName,

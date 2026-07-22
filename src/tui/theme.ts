@@ -1,13 +1,12 @@
 /**
- * Aerin's color theme: the terminal.sexy default scheme (Tomorrow Night
- * lineage). Central palette — UI code refers to roles, not raw colors.
- * https://terminal.sexy
+ * Aerin's color theme: Cyberpunk Synthwave — electric pink brand, cyan voice,
+ * Dracula-family accents. Central palette: UI code refers to roles, never raw
+ * colors, so retheming is a one-file change.
  */
-/** Cyberpunk Synthwave — electric pink brand, cyan voice, Dracula accents. */
 export const C = {
   /** Primary accent: prompts, agent responses, model name, pickers. */
   accent: "#00f2fe", // cyan blue
-  /** Main brand / header art — logo gradient top. */
+  /** Main brand: the header wordmark. */
   accentBright: "#ff77a9", // electric pink
   /** Secondary/meta text. */
   dim: "#6272a4", // muted purple-gray

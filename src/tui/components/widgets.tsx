@@ -8,13 +8,14 @@ export interface CommandSuggestion {
 }
 
 /**
- * Single-line text input with cursor movement (←/→/Home/End), editing
- * (backspace, Ctrl+U clear, Ctrl+W delete word), and Up/Down history recall.
- * Pasted newlines are flattened to spaces so a multi-line paste becomes one
- * prompt instead of firing a submit per line.
+ * Text input with cursor movement, editing (backspace, Ctrl+U clear, Ctrl+W
+ * delete word), and Up/Down history recall. Multi-line drafts are supported:
+ * pasted newlines are preserved, "\"+Enter or Alt+Enter insert a newline, and
+ * Up/Down move between lines while the draft is multi-line.
  *
  * When `commands` is provided and the value is a bare "/prefix", a live
- * suggestion list appears: ↑/↓ select, Tab completes, Enter runs.
+ * suggestion list appears: ↑/↓ select, Tab completes, Enter runs. An "@token"
+ * at the cursor completes workspace file paths the same way.
  */
 export function LineInput(props: {
   prompt: string;

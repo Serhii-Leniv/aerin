@@ -6,6 +6,7 @@ import fg from "fast-glob";
 import ignoreFactory from "ignore";
 import type { ToolDef, ToolContext } from "./types.js";
 import { truncateOutput } from "./types.js";
+import { assertReadable } from "./fs-tools.js";
 
 const GLOB_RESULT_CAP = 200;
 
@@ -32,6 +33,7 @@ export const globTool: ToolDef<z.ZodTypeAny> = {
   summarize: (i) => `Glob(${i.pattern})`,
   async execute(input, ctx) {
     const base = input.path ? path.resolve(ctx.cwd, input.path) : ctx.cwd;
+    assertReadable(base, ctx);
     const ig = await loadGitignore(base);
     const matches = await fg(input.pattern, {
       cwd: base,
@@ -136,6 +138,7 @@ export const grepTool: ToolDef<z.ZodTypeAny> = {
   summarize: (i) => `Search("${i.pattern}"${i.glob ? ` in ${i.glob}` : ""})`,
   async execute(input, ctx) {
     const searchPath = input.path ? path.resolve(ctx.cwd, input.path) : ctx.cwd;
+    assertReadable(searchPath, ctx);
     const mode = input.mode ?? "content";
 
     if (await hasRipgrep()) {

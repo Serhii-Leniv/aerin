@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { htmlToText, parseDuckDuckGo, webFetchTool, webSearchTool } from "../src/tools/web-tools.js";
+import { assertPublicHttpUrl, htmlToText, parseDuckDuckGo, webFetchTool, webSearchTool } from "../src/tools/web-tools.js";
 
 describe("htmlToText", () => {
   test("strips tags, scripts, and entities", () => {
@@ -42,6 +42,24 @@ describe("web tools", () => {
     expect(webSearchTool.permission).toBe("read");
     expect(webFetchTool.name).toBe("webfetch");
     expect(webSearchTool.name).toBe("websearch");
+  });
+
+  test("SSRF guard blocks internal targets, allows the public web", () => {
+    for (const bad of [
+      "http://localhost:8080/admin",
+      "http://127.0.0.1/x",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://10.0.0.5/",
+      "http://172.16.1.1/",
+      "http://192.168.1.1/router",
+      "http://[::1]/",
+      "http://internal.corp.internal/",
+      "file:///etc/passwd",
+    ]) {
+      expect(() => assertPublicHttpUrl(bad)).toThrow();
+    }
+    expect(assertPublicHttpUrl("https://example.com/docs").hostname).toBe("example.com");
+    expect(assertPublicHttpUrl("http://8.8.8.8/").hostname).toBe("8.8.8.8");
   });
 
   test("webfetch rejects non-http urls", async () => {

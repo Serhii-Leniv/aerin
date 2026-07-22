@@ -110,7 +110,14 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           case "usage":
             break;
           case "retry":
-            stdout.write(`  [retrying after provider error, attempt ${event.attempt + 1}/${event.maxAttempts}]\n`);
+            stdout.write(`  [retrying after provider error, attempt ${event.attempt}/${event.maxAttempts}]\n`);
+            break;
+          case "subagent-update":
+            if (event.status !== "running") {
+              stdout.write(
+                `  ⎿  agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${event.inputTokens + event.outputTokens} tok)\n`,
+              );
+            }
             break;
           case "todo-update":
             for (const t of event.items) {

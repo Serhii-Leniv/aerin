@@ -183,7 +183,9 @@ export async function setupAgent(
         : {}),
     }),
   );
-  agent.registerTool(createQuestionTool({ ...(onQuestion ? { ask: onQuestion } : {}) }));
+  // Only offer the question tool when someone can actually answer — in
+  // headless mode the model shouldn't see (and waste a call on) a dead tool.
+  if (onQuestion) agent.registerTool(createQuestionTool({ ask: onQuestion }));
 
   return {
     agent,
@@ -213,6 +215,16 @@ async function readStdin(): Promise<string> {
 }
 
 export async function main(argv: string[]): Promise<void> {
+  // A crash must never die silently inside the alternate screen: leave it
+  // (and mouse mode) first so the stack trace survives in the terminal.
+  const crash = (err: unknown): void => {
+    process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+    console.error("aerin crashed:", err);
+    process.exit(1);
+  };
+  process.on("uncaughtException", crash);
+  process.on("unhandledRejection", crash);
+
   const program = new Command();
   program
     .name("aerin")

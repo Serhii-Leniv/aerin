@@ -362,7 +362,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             case "retry":
               pushItem(
                 "info",
-                `(provider error — retrying, attempt ${event.attempt + 1}/${event.maxAttempts}: ${event.message.slice(0, 80)})`,
+                `(provider error — retrying, attempt ${event.attempt}/${event.maxAttempts}: ${event.message.slice(0, 80)})`,
               );
               break;
             case "subagent-update": {
@@ -415,17 +415,31 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         setThinking(false);
         setReasoningTail("");
         reasoningBuf.current = "";
+        // An aborted/errored turn never reaches message-end — flush what
+        // streamed so it is not lost, and never leaks into the next turn.
+        if (flushTimer.current) clearTimeout(flushTimer.current);
+        flushTimer.current = null;
+        if (reasoningTimer.current) clearTimeout(reasoningTimer.current);
+        reasoningTimer.current = null;
+        if (streamBuf.current.trim()) pushItem("assistant", withDot(renderMarkdown(streamBuf.current)));
+        streamBuf.current = "";
+        setStreaming("");
         settleDialogs();
         setSubagents(new Map()); // clear stragglers on abort/error
         setTerminalTitle(`✦ aerin — ${dirName}`);
       }
-      // Drain one queued message; its own turn will drain the next.
-      setQueued((q) => {
+      // Drain the queue: a message starts a turn (whose finally drains the
+      // next); a command runs inline and must keep draining itself.
+      setQueued(function drainStep(q): string[] {
         const [next, ...rest] = q;
         if (next !== undefined) {
           setTimeout(() => {
-            if (next.startsWith("/")) runCommand(next);
-            else void runTurn(next);
+            if (next.startsWith("/")) {
+              runCommand(next);
+              setQueued(drainStep); // commands don't start turns — keep going
+            } else {
+              void runTurn(next);
+            }
           }, 0);
         }
         return rest;

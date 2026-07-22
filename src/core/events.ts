@@ -11,7 +11,6 @@ export type AgentEvent =
   | { type: "message-end" }
   | { type: "tool-call"; id: string; name: string; input: unknown; summary: string }
   | { type: "tool-result"; id: string; name: string; output: string; isError: boolean }
-  | { type: "permission-request"; id: string; name: string; summary: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; costUsd: number | undefined }
   | {
       type: "subagent-update";
@@ -30,6 +29,7 @@ export type AgentEvent =
     }
   | { type: "compaction"; preTokens: number }
   | { type: "todo-update"; items: { text: string; status: "pending" | "active" | "done" }[] }
+  /** Intentional end-of-turn sentinel; frontends may ignore it (iteration ends anyway). */
   | { type: "turn-end" }
   | { type: "retry"; attempt: number; maxAttempts: number; message: string }
   | { type: "error"; message: string };

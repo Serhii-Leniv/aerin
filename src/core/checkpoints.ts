@@ -26,11 +26,6 @@ export class Checkpoints {
     }
   }
 
-  /** True if any turn captured changes. */
-  get hasChanges(): boolean {
-    return this.turns.some((t) => t.size > 0);
-  }
-
   /**
    * Restore the files of the most recent turn that changed anything.
    * Returns the restored paths (empty when there is nothing to undo).

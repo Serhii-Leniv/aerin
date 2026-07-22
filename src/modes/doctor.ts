@@ -35,6 +35,27 @@ export async function runDoctor(cwd: string): Promise<void> {
         ),
   );
 
+  const { discoverSkills } = await import("../core/skills.js");
+  const { discoverCommands } = await import("../core/commands.js");
+  const skills = await discoverSkills(cwd);
+  const commands = await discoverCommands(cwd);
+  lines.push("", "Extensions:");
+  lines.push(info(`skills: ${skills.length ? skills.map((s) => s.name).join(", ") : "(none — .aerin/skills/<name>/SKILL.md)"}`));
+  lines.push(info(`commands: ${commands.length ? commands.map((c) => "/" + c.name).join(", ") : "(none — .aerin/commands/<name>.md)"}`));
+
+  try {
+    const res = await fetch("https://registry.npmjs.org/aerin-agent/latest", { signal: AbortSignal.timeout(4000) });
+    const latest = res.ok ? ((await res.json()) as { version?: string }).version : undefined;
+    lines.push("", "Version:");
+    lines.push(
+      latest && latest !== VERSION
+        ? warn(`v${VERSION} — v${latest} available (aerin update)`)
+        : ok(`v${VERSION} is the latest`),
+    );
+  } catch {
+    // offline — skip
+  }
+
   lines.push("", "Config:");
   lines.push(info(`global:  ${GLOBAL_CONFIG_FILE} ${fs.existsSync(GLOBAL_CONFIG_FILE) ? "(exists)" : "(none)"}`));
   const projFile = projectSettingsFile(cwd);

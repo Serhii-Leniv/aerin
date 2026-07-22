@@ -42,9 +42,14 @@ export function registerModelInfo(modelId: string, info: ModelInfo): void {
   DYNAMIC_TABLE[modelId] = info;
 }
 
-/** Metadata when we actually know the model — no default fallback. */
+/**
+ * Metadata when we actually know the model — no default fallback.
+ * The dynamic registry (models.dev, refreshed daily) WINS over the static
+ * table: live data stays true when prices change; the static entries are
+ * only a fallback for offline runs and models the registry lacks.
+ */
 export function knownModelInfo(modelId: string): ModelInfo | undefined {
-  return MODEL_TABLE[modelId] ?? DYNAMIC_TABLE[modelId];
+  return DYNAMIC_TABLE[modelId] ?? MODEL_TABLE[modelId];
 }
 
 export function modelInfo(modelId: string): ModelInfo {
