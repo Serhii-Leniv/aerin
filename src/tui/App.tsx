@@ -234,6 +234,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workingRef = useRef(false);
   const turnStartRef = useRef(0);
+  const lastToolResultRef = useRef<{ summary: string; output: string; isError: boolean } | null>(null);
+  const lastSummaryRef = useRef<string | null>(null);
 
   const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
     setScrollOffset(0); // new content — snap back to following the bottom
@@ -383,10 +385,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             }
             case "tool-call":
               pushItem("tool", `⏺ ${event.summary}`);
+              lastSummaryRef.current = event.summary;
               break;
             case "tool-result": {
               const stat = resultStat(event.output, event.isError);
-              pushItem(event.isError ? "tool-error" : "info", `  ⎿  ${event.isError ? "✗ " : ""}${stat}`);
+              const collapsed = stat !== event.output.trim();
+              lastToolResultRef.current = {
+                summary: lastSummaryRef.current ?? event.name,
+                output: event.output,
+                isError: event.isError,
+              };
+              pushItem(
+                event.isError ? "tool-error" : "info",
+                `  ⎿  ${event.isError ? "✗ " : ""}${stat}${collapsed ? " (ctrl+o expand)" : ""}`,
+              );
               break;
             }
             case "compaction":
@@ -629,8 +641,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               "Shortcuts:",
               "  Esc          interrupt the agent · clear the input",
               "  Esc Esc      edit your last message",
+              "  Ctrl+O       expand the last tool output",
               "  Shift+Tab    cycle mode: manual → accept edits → plan",
               "  Tab          complete /commands and @file paths",
+              "  Home/End · Ctrl+←/→   cursor jumps (words, line edges)",
               "  \\ + Enter    insert a newline (Alt+Enter too)",
               "  PgUp/PgDn    scroll the transcript (mouse wheel works)",
               "  @path        attach a file to your message",
@@ -858,6 +872,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   // Global keys: Esc interrupts; Shift+Tab cycles modes; PgUp/PgDn scroll; double Ctrl+C exits.
   useInput((input, key) => {
+    if (key.ctrl && input === "o") {
+      const last = lastToolResultRef.current;
+      if (last) {
+        const lines = last.output.split("\n");
+        const shown = lines.length > 300 ? [...lines.slice(0, 300), `[… ${lines.length - 300} more lines]`] : lines;
+        pushItem(last.isError ? "tool-error" : "info", `  ⎿  ${last.summary} — full output:\n${shown.join("\n")}`);
+        lastToolResultRef.current = null; // one-shot: re-arms on the next tool result
+      }
+      return;
+    }
     if (key.tab && key.shift) {
       // manual → accept edits → plan → manual (Claude Code order).
       // The status-bar badge and input border announce the mode — no chat spam.

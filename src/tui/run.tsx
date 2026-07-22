@@ -113,14 +113,23 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
       // other mouse events (clicks, drags) are swallowed for now
     }
     clean += s.slice(last);
+    // Ink's key parser can't surface Home/End/Ctrl+arrows — translate them to
+    // control codes LineInput understands, and strip bracketed-paste markers
+    // (mode 2004 makes multi-line pastes arrive as one atomic chunk).
+    clean = clean
+      .replace(/\x1b\[200~|\x1b\[201~/g, "")
+      .replace(/\x1b\[1~|\x1b\[H|\x1bOH/g, "\x01") // Home → Ctrl+A
+      .replace(/\x1b\[4~|\x1b\[F|\x1bOF/g, "\x05") // End  → Ctrl+E
+      .replace(/\x1b\[1;5D/g, "\x02") // Ctrl+← → word left
+      .replace(/\x1b\[1;5C/g, "\x06"); // Ctrl+→ → word right
     if (clean.length > 0) filteredStdin.write(clean);
   };
   process.stdin.on("data", onStdinData);
 
   const leaveAltScreen = (): void => {
-    process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+    process.stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");
   };
-  process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h");
+  process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h\x1b[?2004h");
   process.once("exit", leaveAltScreen);
   setTerminalTitle(`✦ aerin — ${setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin"}`);
 

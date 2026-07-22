@@ -173,8 +173,20 @@ export function LineInput(props: {
         return;
       }
       if (key.ctrl) {
-        if (input === "a") return setCursor(0);
-        if (input === "e") return setCursor(value.length);
+        if (input === "a") return setCursor(0); // also sent by Home
+        if (input === "e") return setCursor(value.length); // also sent by End
+        if (input === "b") {
+          // word left (also sent by Ctrl+←)
+          const head = value.slice(0, cursor);
+          const m = /\S+\s*$/.exec(head);
+          return setCursor(m ? head.length - m[0].length : 0);
+        }
+        if (input === "f") {
+          // word right (also sent by Ctrl+→)
+          const tail = value.slice(cursor);
+          const m = /^\s*\S+/.exec(tail);
+          return setCursor(cursor + (m ? m[0].length : tail.length));
+        }
         if (input === "u") return set("", 0);
         if (input === "w") {
           const head = value.slice(0, cursor).replace(/\S+\s*$/, "");
