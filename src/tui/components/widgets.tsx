@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { C } from "../theme.js";
 
 export interface CommandSuggestion {
   name: string;
@@ -178,18 +179,18 @@ export function LineInput(props: {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="cyan">{props.prompt}</Text>
+        <Text color={C.accent}>{props.prompt}</Text>
         <Text>{before}</Text>
         {props.active ? <Text inverse>{at}</Text> : <Text>{at}</Text>}
         <Text>{after}</Text>
         {!value && props.placeholder ? (
-          <Text color="gray" dimColor>
+          <Text color={C.dim} dimColor>
             {props.placeholder}
           </Text>
         ) : null}
       </Box>
       {matches.map((m, i) => (
-        <Text key={m.name} color={i === cSugg ? "cyan" : "gray"}>
+        <Text key={m.name} color={i === cSugg ? C.accent : C.dim}>
           {i === cSugg ? "❯ " : "  "}
           {m.name.padEnd(pad)}
           {m.description}
@@ -197,7 +198,7 @@ export function LineInput(props: {
       ))}
       {atMatch && atMatch[0].length > 1
         ? fileMatches.map((f, i) => (
-            <Text key={f} color={i === cFile ? "cyan" : "gray"}>
+            <Text key={f} color={i === cFile ? C.accent : C.dim}>
               {i === cFile ? "❯ " : "  "}@{f}
             </Text>
           ))
@@ -216,8 +217,8 @@ export function Spinner(props: { label: string; since?: number }): React.ReactEl
   }, []);
   const elapsed = props.since ? Math.floor((Date.now() - props.since) / 1000) : 0;
   return (
-    <Text color="gray">
-      <Text color="cyan">{SPINNER_FRAMES[frame]}</Text> {props.label}
+    <Text color={C.dim}>
+      <Text color={C.accent}>{SPINNER_FRAMES[frame]}</Text> {props.label}
       {elapsed > 0 ? ` · ${elapsed}s` : ""}
     </Text>
   );
@@ -233,12 +234,12 @@ export function DiffText(props: { diff: string; maxLines?: number }): React.Reac
           key={i}
           color={
             line.startsWith("+") && !line.startsWith("+++")
-              ? "green"
+              ? C.ok
               : line.startsWith("-") && !line.startsWith("---")
-                ? "red"
+                ? C.error
                 : line.startsWith("@@")
-                  ? "cyan"
-                  : "gray"
+                  ? C.accent
+                  : C.dim
           }
         >
           {line || " "}
@@ -341,27 +342,27 @@ export function FilterSelect(props: {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="cyan">filter: </Text>
+        <Text color={C.accent}>filter: </Text>
         <Text>{query || (props.placeholder ?? "type to filter…")}</Text>
-        <Text color="gray"> ({selectableCount}/{totalSelectable})</Text>
+        <Text color={C.dim}> ({selectableCount}/{totalSelectable})</Text>
       </Box>
       {visible.map((item, i) => {
         const absolute = windowStart + i;
         if (item.header) {
           return (
-            <Text key={`h-${item.value}`} bold color="magenta">
+            <Text key={`h-${item.value}`} bold color={C.magenta}>
               {item.label}
             </Text>
           );
         }
         return (
-          <Text key={item.value} color={absolute === currentRow ? "cyan" : undefined}>
+          <Text key={item.value} color={absolute === currentRow ? C.accent : undefined}>
             {absolute === currentRow ? "❯ " : "  "}
             {item.label}
           </Text>
         );
       })}
-      {selectableCount === 0 ? <Text color="gray">  (no matches — Esc to cancel)</Text> : null}
+      {selectableCount === 0 ? <Text color={C.dim}>  (no matches — Esc to cancel)</Text> : null}
     </Box>
   );
 }
@@ -387,7 +388,7 @@ export function SelectList(props: {
   return (
     <Box flexDirection="column">
       {props.items.map((item, i) => (
-        <Text key={item.value} color={i === index ? "cyan" : undefined}>
+        <Text key={item.value} color={i === index ? C.accent : undefined}>
           {i === index ? "❯ " : "  "}
           {item.label}
         </Text>

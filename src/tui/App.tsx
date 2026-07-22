@@ -18,6 +18,7 @@ import { renderMarkdown } from "../terminal/markdown.js";
 import { messageText, relativeTime } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
+import { C } from "./theme.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
 export interface TuiSetup {
@@ -128,7 +129,7 @@ const LOGO = [
   "▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀ ▀    ▀",
 ] as const;
 /** Gradient, top to bottom. */
-const LOGO_COLORS = ["cyanBright", "cyanBright", "cyan", "cyan"] as const;
+const LOGO_COLORS = [C.accentBright, C.accentBright, C.accent, C.accent] as const;
 const MIN_LOGO_COLUMNS = 38;
 
 /** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
@@ -779,24 +780,24 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       <Box flexDirection="column" flexShrink={0} paddingX={1}>
         {showLogo ? (
           LOGO.map((row, i) => (
-            <Text key={i} bold color={LOGO_COLORS[i] ?? "cyan"}>
+            <Text key={i} bold color={LOGO_COLORS[i] ?? C.accent}>
               {row}
             </Text>
           ))
         ) : (
-          <Text color="cyan" bold>
+          <Text color={C.accent} bold>
             ✦ Aerin
           </Text>
         )}
         <Text>
-          <Text color="gray" dimColor>
+          <Text color={C.dim} dimColor>
             v{VERSION}
           </Text>
-          <Text color="gray"> · </Text>
-          <Text color="cyan">{modelId}</Text>
-          <Text color="gray"> · {shortenPath(setup.cwd)}</Text>
+          <Text color={C.dim}> · </Text>
+          <Text color={C.accent}>{modelId}</Text>
+          <Text color={C.dim}> · {shortenPath(setup.cwd)}</Text>
         </Text>
-        <Text color="gray" dimColor>
+        <Text color={C.dim} dimColor>
           {"─".repeat(Math.max(10, size.columns - 2))}
         </Text>
       </Box>
@@ -823,11 +824,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             <Text
               color={
                 item.kind === "user"
-                  ? "cyan"
+                  ? C.accent
                   : item.kind === "error" || item.kind === "tool-error"
-                    ? "red"
+                    ? C.error
                     : item.kind === "info"
-                      ? "gray"
+                      ? C.dim
                       : undefined
               }
             >
@@ -842,7 +843,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
       {thinking && reasoningTail ? (
         <Box flexDirection="column" marginBottom={0}>
-          <Text color="gray" dimColor>
+          <Text color={C.dim} dimColor>
             {reasoningTail}
           </Text>
         </Box>
@@ -850,16 +851,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {subagents.size > 0 ? (
         <Box flexDirection="column">
           {[...subagents.entries()].map(([id, s]) => (
-            <Text key={id} color="gray">
+            <Text key={id} color={C.dim}>
               {"  "}◐ {s.description} — {s.toolCalls} tools · {s.lastTool ?? "starting"}
             </Text>
           ))}
         </Box>
       ) : null}
       {todos.length > 0 ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1} alignSelf="flex-start">
+        <Box flexDirection="column" borderStyle="round" borderColor={C.dim} paddingX={1} alignSelf="flex-start">
           {todos.map((t, i) => (
-            <Text key={i} color={t.status === "done" ? "green" : t.status === "active" ? "cyan" : "gray"}>
+            <Text key={i} color={t.status === "done" ? C.ok : t.status === "active" ? C.accent : C.dim}>
               {t.status === "done" ? "☑" : t.status === "active" ? "▸" : "☐"} {t.text}
             </Text>
           ))}
@@ -879,8 +880,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {/* Bottom section: dialogs, input, status — pinned by layout. */}
       <Box flexDirection="column" flexShrink={0}>
       {permission && !denyReasonMode ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-          <Text color="yellow">Permission: {permission.req.summary}</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.warn} paddingX={1}>
+          <Text color={C.warn}>Permission: {permission.req.summary}</Text>
           {permission.req.preview ? <DiffText diff={permission.req.preview} maxLines={25} /> : null}
           <SelectList
             active={true}
@@ -905,7 +906,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {permission && denyReasonMode ? (
-        <Box borderStyle="round" borderColor="red" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.error} paddingX={1}>
           <LineInput
             prompt="Why / what instead? "
             active={true}
@@ -919,8 +920,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {question && !questionOther ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">? {question.q}</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
+          <Text color={C.accent}>? {question.q}</Text>
           <SelectList
             active={true}
             items={[
@@ -940,7 +941,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {question && questionOther ? (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.accent} paddingX={1}>
           <LineInput
             prompt="answer: "
             active={true}
@@ -954,8 +955,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {connect?.step === "pick" ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Connect a provider — type to filter, Enter to pick, Esc to cancel</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
+          <Text color={C.accent}>Connect a provider — type to filter, Enter to pick, Esc to cancel</Text>
           <FilterSelect
             active={true}
             items={[
@@ -990,7 +991,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {connect?.step === "key" ? (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.accent} paddingX={1}>
           <LineInput
             prompt={`${connect.label} API key (Enter empty to cancel): `}
             active={true}
@@ -1006,7 +1007,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {connect?.step === "custom-name" ? (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.accent} paddingX={1}>
           <LineInput
             prompt="provider name, lowercase (Enter empty to cancel): "
             active={true}
@@ -1023,7 +1024,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {connect?.step === "custom-url" ? (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.accent} paddingX={1}>
           <LineInput
             prompt={`base URL for ${connect.id} (e.g. https://host/v1): `}
             active={true}
@@ -1041,7 +1042,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {connect?.step === "custom-key" ? (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor={C.accent} paddingX={1}>
           <LineInput
             prompt={`${connect.id} API key (Enter empty if none, e.g. local): `}
             active={true}
@@ -1055,8 +1056,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {helpMenu ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Commands — ↑/↓ to choose, Enter to run, Esc to close</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
+          <Text color={C.accent}>Commands — ↑/↓ to choose, Enter to run, Esc to close</Text>
           <FilterSelect
             active={true}
             items={allCommands.map((c) => ({
@@ -1069,17 +1070,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               if (name !== "/help") runCommand(name);
             }}
           />
-          <Text color="gray">Esc interrupts a running turn · Ctrl+C twice exits · Tab completes /commands</Text>
+          <Text color={C.dim}>Esc interrupts a running turn · Ctrl+C twice exits · Tab completes /commands</Text>
         </Box>
       ) : null}
 
       {modelPicker === "loading" ? (
-        <Text color="gray">… fetching available models from your providers</Text>
+        <Text color={C.dim}>… fetching available models from your providers</Text>
       ) : null}
 
       {modelPicker && modelPicker !== "loading" ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
+          <Text color={C.accent}>Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
             items={buildPickerItems(modelPicker, recentModels, modelId)}
@@ -1093,8 +1094,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
 
       {sessionPicker ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Resume a conversation — type to filter, Esc to cancel</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
+          <Text color={C.accent}>Resume a conversation — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
             items={sessionPicker.map((s) => ({
@@ -1115,7 +1116,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {inputActive ? (
         <Box
           borderStyle="round"
-          borderColor={planMode ? "magenta" : working ? "yellow" : "cyan"}
+          borderColor={planMode ? C.magenta : working ? C.warn : C.accent}
           paddingX={1}
         >
           <LineInput
@@ -1136,29 +1137,29 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
       <Box paddingX={1}>
         <Text>
-          <Text color="cyan">{modelId.split("/").slice(-1)[0]}</Text>
+          <Text color={C.accent}>{modelId.split("/").slice(-1)[0]}</Text>
           {ctxTokens > 0 ? (
             <Text
               color={
                 ctxTokens / modelInfo(modelId).contextWindow > 0.8
-                  ? "red"
+                  ? C.error
                   : ctxTokens / modelInfo(modelId).contextWindow > 0.5
-                    ? "yellow"
-                    : "gray"
+                    ? C.warn
+                    : C.dim
               }
             >
               {` · ctx ${Math.round((ctxTokens / modelInfo(modelId).contextWindow) * 100)}%`}
             </Text>
           ) : null}
-          <Text color="gray">
+          <Text color={C.dim}>
             {" · "}
             {fmtTokens(stats.inTok)}↑ {fmtTokens(stats.outTok)}↓
             {stats.cost > 0 ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}` : ""}
           </Text>
-          {planMode ? <Text color="magenta"> · PLAN</Text> : null}
-          {queued.length > 0 ? <Text color="yellow"> · {queued.length} queued</Text> : null}
-          {scrollOffset > 0 ? <Text color="yellow"> · ↑ scrolled (PgDn)</Text> : null}
-          {exitArmed ? <Text color="red"> · Ctrl+C again to exit</Text> : null}
+          {planMode ? <Text color={C.magenta}> · PLAN</Text> : null}
+          {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}
+          {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}
+          {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}
         </Text>
       </Box>
       </Box>
