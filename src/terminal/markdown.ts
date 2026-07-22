@@ -1,5 +1,6 @@
 import { Marked } from "marked";
 import { markedTerminal } from "marked-terminal";
+import { C, rgbOf } from "../tui/theme.js";
 
 /**
  * Terminal markdown rendering: width-aware reflow (re-configured when the
@@ -9,19 +10,22 @@ import { markedTerminal } from "marked-terminal";
  */
 
 // Match chalk's discipline: no ANSI when output isn't a color terminal.
+// Colors resolve from the theme at CALL time so background detection
+// (light-terminal palette swap) applies even though this module loads first.
 const colorEnabled = Boolean(process.env["FORCE_COLOR"]) || process.stdout.isTTY === true;
-const wrap = (codes: string) => (s: string) => (colorEnabled ? `\x1b[${codes}m${s}\x1b[0m` : s);
-const pink = wrap("1;38;2;255;119;169"); // headings — brand pink, bold
-const cyan = wrap("38;2;92;200;255"); // links — sky cyan (theme accent)
-const dim = wrap("38;2;98;114;164"); // blockquotes, hr
-const yellow = wrap("38;2;230;200;110"); // inline code — soft gold (theme warn)
+const wrap = (get: () => string, bold = false) => (s: string) =>
+  colorEnabled ? `\x1b[${bold ? "1;" : ""}38;2;${rgbOf(get())}m${s}\x1b[0m` : s;
+const pink = wrap(() => C.accentBright, true); // headings — brand pink, bold
+const cyan = wrap(() => C.accent); // links
+const dim = wrap(() => C.dim); // blockquotes, hr
+const yellow = wrap(() => C.warn); // inline code
 
 // Synthwave syntax theme for fenced code (highlight.js token names).
-const pinkPlain = wrap("38;2;255;119;169");
-const green = wrap("38;2;80;250;123");
-const purple = wrap("38;2;189;147;249");
-const orange = wrap("38;2;255;184;108");
-const fg = wrap("38;2;248;248;242");
+const pinkPlain = wrap(() => C.accentBright);
+const green = wrap(() => C.ok);
+const purple = wrap(() => C.magenta);
+const orange = wrap(() => C.orange);
+const fg = wrap(() => C.fg);
 const id = (s: string) => s;
 const SYNTAX_THEME = {
   keyword: pinkPlain,
@@ -46,7 +50,7 @@ const SYNTAX_THEME = {
   symbol: purple,
   bullet: cyan,
   addition: green,
-  deletion: wrap("38;2;255;85;85"),
+  deletion: wrap(() => C.error),
   default: id,
 };
 

@@ -305,6 +305,11 @@ export async function main(argv: string[]): Promise<void> {
       return;
     }
 
+    // Light-terminal palette swap (OSC 11 query) before anything renders.
+    const { detectLightBackground } = await import("./terminal/background.js");
+    const { applyBackgroundTheme } = await import("./tui/theme.js");
+    applyBackgroundTheme(await detectLightBackground());
+
     if (opts["tui"] === false) {
       await runRepl(flags, promptArgs || undefined);
       return;

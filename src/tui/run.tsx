@@ -104,6 +104,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     }
   };
   process.stdin.on("data", onStdinData);
+  process.stdin.resume(); // background detection may have left stdin explicitly paused
 
   const leaveAltScreen = (): void => {
     process.stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");

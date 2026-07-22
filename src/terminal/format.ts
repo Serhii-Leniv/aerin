@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import { C, rgbOf } from "../tui/theme.js";
 
 /** Concatenated text parts of a saved message (string or parts array). */
 export function messageText(m: ModelMessage): string {
@@ -28,13 +29,7 @@ export function colorizeDiff(diff: string): string {
   return diff
     .split("\n")
     .map((line) => {
-      const c = line.startsWith("+")
-        ? "38;2;80;250;123" // neon green
-        : line.startsWith("-")
-          ? "38;2;255;85;85" // hot red
-          : line.startsWith("@@")
-            ? "38;2;98;114;164"
-            : "38;2;98;114;164";
+      const c = `38;2;${rgbOf(line.startsWith("+") ? C.ok : line.startsWith("-") ? C.error : C.dim)}`;
       return color ? `  \x1b[${c}m${line}\x1b[0m` : `  ${line}`;
     })
     .join("\n");
