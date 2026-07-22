@@ -34,6 +34,8 @@ export interface TuiSetup {
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
   modelUnavailable?: string;
+  /** Emits "wheel" (+1 down / -1 up) from the terminal mouse — set by run.tsx. */
+  mouse?: import("node:events").EventEmitter;
 }
 
 /**
@@ -257,6 +259,23 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mouse wheel scrolls the transcript like PgUp/PgDn, two items per notch.
+  const itemsLenRef = useRef(0);
+  itemsLenRef.current = items.length;
+  useEffect(() => {
+    const m = setup.mouse;
+    if (!m) return;
+    const onWheel = (dir: number): void => {
+      setScrollOffset((o) =>
+        dir < 0 ? Math.min(Math.max(0, itemsLenRef.current - 1), o + 2) : Math.max(0, o - 2),
+      );
+    };
+    m.on("wheel", onWheel);
+    return () => {
+      m.off("wheel", onWheel);
+    };
+  }, [setup.mouse]);
 
   // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {

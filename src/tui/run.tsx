@@ -1,5 +1,7 @@
 import React from "react";
 import { render } from "ink";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import type { ModelMessage } from "ai";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
@@ -53,19 +55,62 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
 
   // Full-screen app on the alternate screen buffer (opencode-style): the UI
   // owns the whole window, and the user's shell scrollback is restored intact
-  // on exit.
-  const leaveAltScreen = (): void => {
-    process.stdout.write("\x1b[?1049l");
+  // on exit. SGR mouse reporting is enabled so the wheel scrolls the
+  // transcript; the sequences are stripped from stdin BEFORE Ink parses them
+  // (Ink would otherwise insert them into the input as garbage text).
+  const mouse = new EventEmitter();
+  tuiSetup.mouse = mouse;
+  const filteredStdin = new PassThrough();
+  Object.assign(filteredStdin, {
+    isTTY: process.stdin.isTTY,
+    setRawMode: (mode: boolean) => {
+      if (process.stdin.isTTY) process.stdin.setRawMode(mode);
+      return filteredStdin;
+    },
+    ref: () => process.stdin.ref(),
+    unref: () => process.stdin.unref(),
+  });
+
+  let carry = "";
+  const onStdinData = (chunk: Buffer): void => {
+    let s = carry + chunk.toString("utf8");
+    carry = "";
+    // Hold back a partial mouse sequence split across chunks.
+    const partial = /\x1b\[<[\d;]*$/.exec(s);
+    if (partial) {
+      carry = partial[0];
+      s = s.slice(0, partial.index);
+    }
+    const re = /\x1b\[<(\d+);\d+;\d+[Mm]/g;
+    let clean = "";
+    let last = 0;
+    for (let m = re.exec(s); m; m = re.exec(s)) {
+      clean += s.slice(last, m.index);
+      last = m.index + m[0].length;
+      const button = Number(m[1]);
+      if ((button & 64) !== 0) mouse.emit("wheel", (button & 1) === 0 ? -1 : 1);
+      // other mouse events (clicks, drags) are swallowed for now
+    }
+    clean += s.slice(last);
+    if (clean.length > 0) filteredStdin.write(clean);
   };
-  process.stdout.write("\x1b[?1049h\x1b[H");
+  process.stdin.on("data", onStdinData);
+
+  const leaveAltScreen = (): void => {
+    process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+  };
+  process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h");
   process.once("exit", leaveAltScreen);
 
   try {
     const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
       exitOnCtrlC: false,
+      stdin: filteredStdin as unknown as NodeJS.ReadStream,
     });
     await instance.waitUntilExit();
   } finally {
+    process.stdin.removeListener("data", onStdinData);
+    process.stdin.pause();
     leaveAltScreen();
     // The alt screen took the conversation with it — leave a plain transcript
     // in the normal terminal so the session survives in scrollback.

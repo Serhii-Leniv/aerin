@@ -12,8 +12,21 @@ export function renderMarkdown(text: string): string {
       configured = true;
     }
     const out = marked.parse(text, { async: false });
-    return typeof out === "string" ? out.trimEnd() : text;
+    return typeof out === "string" ? inlineFallback(out.trimEnd()) : text;
   } catch {
     return text;
   }
+}
+
+/**
+ * marked-terminal styles inline markdown in paragraphs but leaves it literal
+ * inside list items — finish the job for the common cases. When the output
+ * already carries ANSI styling, use ANSI; otherwise just strip the markers.
+ */
+function inlineFallback(text: string): string {
+  const styled = text.includes("\x1b[");
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, (_, t: string) => (styled ? `\x1b[1m${t}\x1b[22m` : t))
+    .replace(/__([^_\n]+)__/g, (_, t: string) => (styled ? `\x1b[1m${t}\x1b[22m` : t))
+    .replace(/(?<![`\w])`([^`\n]+)`(?!`)/g, (_, t: string) => (styled ? `\x1b[33m${t}\x1b[39m` : t));
 }
