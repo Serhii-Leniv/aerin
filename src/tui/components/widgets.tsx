@@ -190,16 +190,25 @@ export function LineInput(props: {
         ) : null}
       </Box>
       {matches.map((m, i) => (
-        <Text key={m.name} color={i === cSugg ? C.accent : C.dim}>
-          {i === cSugg ? "❯ " : "  "}
+        <Text
+          key={m.name}
+          backgroundColor={i === cSugg ? C.accent : undefined}
+          color={i === cSugg ? "#000000" : C.dim}
+        >
+          {"  "}
           {m.name.padEnd(pad)}
           {m.description}
+          {"  "}
         </Text>
       ))}
       {atMatch && atMatch[0].length > 1
         ? fileMatches.map((f, i) => (
-            <Text key={f} color={i === cFile ? C.accent : C.dim}>
-              {i === cFile ? "❯ " : "  "}@{f}
+            <Text
+              key={f}
+              backgroundColor={i === cFile ? C.accent : undefined}
+              color={i === cFile ? "#000000" : C.dim}
+            >
+              {"  "}@{f}{"  "}
             </Text>
           ))
         : null}

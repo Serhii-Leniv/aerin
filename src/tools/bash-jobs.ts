@@ -20,7 +20,6 @@ export interface BashJob {
 
 const jobs = new Map<string, BashJob>();
 let counter = 0;
-let cleanupInstalled = false;
 
 export function startJob(command: string, cwd: string): BashJob {
   const shell = detectShell();
@@ -53,22 +52,9 @@ export function startJob(command: string, cwd: string): BashJob {
     job.exitCode = code;
   });
   jobs.set(job.id, job);
-
-  if (!cleanupInstalled) {
-    cleanupInstalled = true;
-    // Best effort: don't leave orphaned dev servers behind when aerin exits.
-    process.once("exit", () => {
-      for (const j of jobs.values()) {
-        if (j.running && j.pid) {
-          try {
-            process.kill(j.pid);
-          } catch {
-            // already gone
-          }
-        }
-      }
-    });
-  }
+  // Deliberately NOT killed when aerin exits: a dev server you started should
+  // outlive the session (kill it with bash_output kill:true or your own tools).
+  child.unref();
   return job;
 }
 
