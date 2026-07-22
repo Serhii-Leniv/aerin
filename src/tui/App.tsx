@@ -152,6 +152,12 @@ const LOGO = [
 ] as const;
 const MIN_LOGO_COLUMNS = 42;
 
+/** Truecolor ANSI paint for banner text baked into the transcript. */
+function paint(s: string, hex: string, bold = false): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `${bold ? "\x1b[1m" : ""}\x1b[38;2;${(n >> 16) & 255};${(n >> 8) & 255};${n & 255}m${s}\x1b[0m`;
+}
+
 /** "● " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
   const lines = text.split("\n");
@@ -203,15 +209,25 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       stdout?.off("resize", onResize);
     };
   }, [stdout]);
-  const showLogo = size.columns >= MIN_LOGO_COLUMNS;
   // One row short of the terminal: at full height Ink switches to a
   // clear-terminal-per-frame fullscreen path, which visibly flickers on every
   // keystroke. One spare row keeps it on the incremental line-diff path.
   const usableRows = Math.max(10, size.rows - 1);
 
-  const [items, setItems] = useState<TranscriptItem[]>(() =>
-    setup.warnings.map((w, i) => ({ key: i, kind: "error" as const, text: `warning: ${w}` })),
-  );
+  const [items, setItems] = useState<TranscriptItem[]>(() => {
+    // The startup banner is transcript content, not chrome (Claude Code-style):
+    // it scrolls away as the conversation grows. Live model/ctx stay in the footer.
+    const art =
+      size.columns >= MIN_LOGO_COLUMNS
+        ? LOGO.map((r) => paint(r, C.accentBright, true)).join("\n")
+        : paint("✦ Aerin", C.accentBright, true);
+    const info =
+      paint(`v${VERSION} · `, C.dim) + paint(setup.modelId, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
+    return [
+      { key: 0, kind: "assistant" as const, text: `${art}\n${info}` },
+      ...setup.warnings.map((w, i) => ({ key: i + 1, kind: "error" as const, text: `warning: ${w}` })),
+    ];
+  });
   const [streaming, setStreaming] = useState("");
   const [working, setWorking] = useState(false);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
@@ -973,32 +989,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   return (
     <Box flexDirection="column" height={usableRows} width={size.columns}>
-      {/* Pinned header — compact, no border box, divider underneath */}
-      <Box flexDirection="column" flexShrink={0} paddingX={1}>
-        {showLogo ? (
-          LOGO.map((row, i) => (
-            <Text key={i} bold color={C.accentBright}>
-              {row}
-            </Text>
-          ))
-        ) : (
-          <Text color={C.accentBright} bold>
-            ✦ Aerin
-          </Text>
-        )}
-        <Text>
-          <Text color={C.dim} dimColor>
-            v{VERSION}
-          </Text>
-          <Text color={C.dim}> · </Text>
-          <Text color={C.accent}>{modelId}</Text>
-          <Text color={C.dim}> · {shortenPath(setup.cwd)}</Text>
-        </Text>
-        <Text color={C.dim} dimColor>
-          {"─".repeat(Math.max(10, size.columns - 2))}
-        </Text>
-      </Box>
-
       {/* Transcript viewport: top-aligned while content fits; once it
           overflows, newest content sticks to the bottom and old lines clip
           away at the top. */}
