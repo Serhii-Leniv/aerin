@@ -14,6 +14,7 @@ import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { messageText, relativeTime } from "../terminal/format.js";
+import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
@@ -181,6 +182,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
   const [recentModels, setRecentModels] = useState<string[]>(setup.config.recentModels ?? []);
+  const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
+  const [scrollOffset, setScrollOffset] = useState(0); // transcript items hidden from the bottom
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
   const [reasoningTail, setReasoningTail] = useState("");
@@ -197,7 +200,48 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const workingRef = useRef(false);
 
   const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
+    setScrollOffset(0); // new content — snap back to following the bottom
     setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
+  }, []);
+
+  // Workspace file list for @-mention completion; best effort, loaded once.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const fg = (await import("fast-glob")).default;
+        const files = await fg(["**/*"], {
+          cwd: setup.cwd,
+          onlyFiles: true,
+          dot: false,
+          followSymbolicLinks: false,
+          suppressErrors: true,
+          deep: 8,
+          ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
+        });
+        setWorkspaceFiles(files.slice(0, 5000).sort());
+      } catch {
+        // no completion — @mentions still expand on submit
+      }
+    })();
+  }, [setup.cwd]);
+
+  // Startup update check; silent unless a newer version exists.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("https://registry.npmjs.org/aerin-agent/latest", {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) return;
+        const latest = ((await res.json()) as { version?: string }).version;
+        if (latest && latest !== VERSION && VERSION !== "0.0.0") {
+          pushItem("info", `(update available: v${latest} — npm i -g aerin-agent)`);
+        }
+      } catch {
+        // offline — never bother the user
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Wire the agent's permission and question callbacks to the dialogs.
@@ -220,8 +264,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       workingRef.current = true;
       setWorking(true);
       pushItem("user", prompt);
+      // @path tokens attach the named files to the prompt (display stays clean).
+      const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
       try {
-        for await (const event of setup.agent.send(prompt)) {
+        for await (const event of setup.agent.send(expanded)) {
           switch (event.type) {
             case "reasoning-delta": {
               setThinking(true);
@@ -514,8 +560,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     setQuestionOther(false);
   }, []);
 
-  // Global keys: Esc interrupts; double Ctrl+C exits.
+  // Global keys: Esc interrupts; PgUp/PgDn scroll the transcript; double Ctrl+C exits.
   useInput((input, key) => {
+    if (key.pageUp) {
+      setScrollOffset((o) => Math.min(Math.max(0, items.length - 1), o + 3));
+      return;
+    }
+    if (key.pageDown) {
+      setScrollOffset((o) => Math.max(0, o - 3));
+      return;
+    }
     if (key.escape && workingRef.current) {
       settleDialogs();
       setup.agent.abort();
@@ -603,7 +657,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         justifyContent={overflowing ? "flex-end" : "flex-start"}
       >
         <Box ref={contentRef} flexDirection="column" flexShrink={0}>
-        {items.slice(-VIEWPORT_ITEMS).map((item) => (
+        {(scrollOffset > 0 ? items.slice(0, Math.max(0, items.length - scrollOffset)) : items)
+          .slice(-VIEWPORT_ITEMS)
+          .map((item) => (
           <Box
             key={item.key}
             marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}
@@ -805,6 +861,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             onSubmit={onSubmit}
             history={inputHistory}
             commands={SLASH_COMMANDS}
+            files={workspaceFiles}
           />
         </Box>
       ) : null}
@@ -819,6 +876,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {fmtTokens(stats.inTok)} in / {fmtTokens(stats.outTok)} out
           {stats.cost > 0 ? ` · ~$${stats.cost.toFixed(4)}` : ""}
           {planMode ? " · PLAN (read-only)" : ""}
+          {scrollOffset > 0 ? ` · ↑ scrolled (PgDn to follow)` : ""}
           {exitArmed ? " · press Ctrl+C again to exit" : ""}
         </Text>
       </Box>

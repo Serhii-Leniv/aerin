@@ -81,6 +81,56 @@ describe("tool progress pump", () => {
     expect(agent.totalCostUsd).toBeCloseTo(0.01);
   });
 
+  test("multiple agent tool calls in one turn run concurrently", async () => {
+    // Two fake "agent" tools that overlap in time: if run sequentially, total
+    // would be ~2x the single duration; concurrently they interleave.
+    const running: number[] = [];
+    let maxConcurrent = 0;
+    const agentDef: ToolDef<z.ZodTypeAny> = {
+      name: "agent",
+      description: "fake sub-agent",
+      inputSchema: z.object({ n: z.number() }),
+      permission: "read",
+      summarize: (i) => `Agent(${i.n})`,
+      async execute(input) {
+        running.push(1);
+        maxConcurrent = Math.max(maxConcurrent, running.length);
+        await new Promise((r) => setTimeout(r, 40));
+        running.pop();
+        return `report-${input.n}`;
+      },
+    };
+    const agent = new Agent({
+      model: mockModel([
+        {
+          toolCalls: [
+            { toolCallId: "a1", toolName: "agent", input: { n: 1 } },
+            { toolCallId: "a2", toolName: "agent", input: { n: 2 } },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+        { text: "done", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+      modelId: "mock/mock",
+      systemPrompt: "test",
+      tools: [agentDef],
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "allow" }),
+      cwd: process.cwd(),
+      allowOutsideCwd: false,
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const e of agent.send("go")) events.push(e);
+    expect(maxConcurrent).toBe(2);
+    const results = events.filter((e) => e.type === "tool-result") as Extract<
+      AgentEvent,
+      { type: "tool-result" }
+    >[];
+    expect(results.map((r) => r.output).sort()).toEqual(["report-1", "report-2"]);
+    expect(results.every((r) => !r.isError)).toBe(true);
+  });
+
   test("iteration cap yields an error event instead of stopping silently", async () => {
     const agent = new Agent({
       model: mockModel([

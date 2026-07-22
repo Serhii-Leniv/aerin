@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { createTwoFilesPatch } from "diff";
+import { createTwoFilesPatch, diffLines } from "diff";
 import type { ToolDef, ToolContext } from "./types.js";
 import { truncateOutput } from "./types.js";
 
@@ -87,8 +87,15 @@ export const writeTool: ToolDef<z.ZodTypeAny> = {
     const abs = resolvePath(input.path, ctx);
     assertInsideCwd(abs, ctx);
     await fs.mkdir(path.dirname(abs), { recursive: true });
+    let old: string | undefined;
+    try {
+      old = await fs.readFile(abs, "utf8");
+    } catch {
+      // new file
+    }
     await fs.writeFile(abs, input.content, "utf8");
-    return `Wrote ${input.content.length} chars to ${input.path}`;
+    if (old === undefined) return `Created ${input.path} (${input.content.split("\n").length} lines)`;
+    return `Wrote ${input.path} (${diffStat(old, input.content)})`;
   },
 };
 
@@ -120,9 +127,20 @@ export const editTool: ToolDef<z.ZodTypeAny> = {
     const raw = await fs.readFile(abs, "utf8");
     const updated = applyEdit(raw, input.old_string, input.new_string, input.replace_all ?? false);
     await fs.writeFile(abs, updated, "utf8");
-    return `Edited ${input.path}`;
+    return `Updated ${input.path} (${diffStat(raw, updated)})`;
   },
 };
+
+/** "+A -R lines" between two file versions. */
+export function diffStat(before: string, after: string): string {
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(before, after)) {
+    if (part.added) added += part.count ?? 0;
+    else if (part.removed) removed += part.count ?? 0;
+  }
+  return `+${added} -${removed} lines`;
+}
 
 /**
  * Match on LF-normalized text (the #1 Windows edit-tool failure is CRLF

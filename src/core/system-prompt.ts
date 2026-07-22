@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { execFile } from "node:child_process";
 import { detectShell } from "../tools/bash.js";
+import type { Skill } from "./skills.js";
 
 const MAX_AGENTS_MD_CHARS = 20_000;
 
@@ -26,9 +28,26 @@ export async function discoverAgentsMd(cwd: string): Promise<string[]> {
   return found;
 }
 
-export async function buildSystemPrompt(cwd: string, modelId: string): Promise<string> {
+/** One-line git snapshot for the environment block; empty outside a repo. */
+export async function gitContext(cwd: string): Promise<string> {
+  const git = (args: string[]): Promise<string> =>
+    new Promise((resolve) => {
+      execFile("git", args, { cwd, timeout: 3000, windowsHide: true }, (err, stdout) =>
+        resolve(err ? "" : stdout.trim()),
+      );
+    });
+  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!branch) return "";
+  const status = await git(["status", "--porcelain"]);
+  const dirty = status ? status.split("\n").length : 0;
+  const lastCommit = await git(["log", "-1", "--format=%h %s"]);
+  return `Git: branch ${branch}, ${dirty === 0 ? "clean" : `${dirty} changed file${dirty === 1 ? "" : "s"}`}${lastCommit ? `, last commit: ${lastCommit.slice(0, 80)}` : ""}`;
+}
+
+export async function buildSystemPrompt(cwd: string, modelId: string, skills: readonly Skill[] = []): Promise<string> {
   const shell = detectShell();
   const agentsMd = await discoverAgentsMd(cwd);
+  const git = await gitContext(cwd);
 
   const sections = [
     `You are Aerin, an open-source CLI coding agent. You help the user with software engineering tasks in their working directory by reading files, searching, editing, and running commands with the provided tools.
@@ -57,8 +76,16 @@ Output style:
 - Platform: ${process.platform} (${os.release()})
 - Shell for the bash tool: ${shell.promptDescription}
 - Model: ${modelId}
-- Date: ${new Date().toDateString()}`,
+- Date: ${new Date().toDateString()}${git ? `\n- ${git}` : ""}`,
   ];
+
+  if (skills.length > 0) {
+    sections.push(
+      `Available skills (load with the skill tool BEFORE starting a task one covers):\n${skills
+        .map((s) => `- ${s.name}: ${s.description}`)
+        .join("\n")}`,
+    );
+  }
 
   if (agentsMd.length > 0) {
     sections.push(`Project instructions from AGENTS.md files (follow these):\n\n${agentsMd.join("\n\n---\n\n")}`);

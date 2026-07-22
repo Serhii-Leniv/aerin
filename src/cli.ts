@@ -6,6 +6,8 @@ import { buildSystemPrompt } from "./core/system-prompt.js";
 import { builtinTools } from "./tools/index.js";
 import { createAgentTool } from "./tools/agent-tool.js";
 import { createQuestionTool, type AskUser } from "./tools/question-tool.js";
+import { createSkillTool } from "./tools/skill-tool.js";
+import { discoverSkills } from "./core/skills.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
 import { resolveModel, providersWithKeys } from "./providers/registry.js";
@@ -123,7 +125,9 @@ export async function setupAgent(
   }
 
   const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo);
-  const systemPrompt = await buildSystemPrompt(cwd, modelId);
+  const skills = await discoverSkills(cwd);
+  const systemPrompt = await buildSystemPrompt(cwd, modelId, skills);
+  if (skills.length > 0) tools.push(createSkillTool(skills));
 
   let store: SessionStore;
   let initialMessages: ModelMessage[] = [];

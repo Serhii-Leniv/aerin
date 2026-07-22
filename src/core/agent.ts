@@ -283,7 +283,15 @@ export class Agent {
         }
 
         const toolResults: ModelMessage = { role: "tool", content: [] };
-        for (const call of toolCalls) {
+        // Sub-agent calls are independent read-only research — run a batch of
+        // them concurrently; everything else stays strictly sequential.
+        const agentCalls = toolCalls.filter((c) => c.toolName === "agent");
+        const sequential =
+          agentCalls.length > 1 ? toolCalls.filter((c) => c.toolName !== "agent") : toolCalls;
+        if (agentCalls.length > 1) {
+          yield* this.dispatchParallel(agentCalls, toolCtx, toolResults);
+        }
+        for (const call of sequential) {
           const { output, isError } = yield* this.dispatchToolCall(call, toolCtx);
           yield { type: "tool-result", id: call.toolCallId, name: call.toolName, output, isError };
           (toolResults.content as unknown[]).push({
@@ -316,6 +324,70 @@ export class Agent {
       await this.opts.store?.append(newMessages).catch(() => {});
     }
     yield { type: "turn-end" };
+  }
+
+  /**
+   * Drive several dispatch generators concurrently, funneling their events
+   * through one queue; results are appended in the original call order.
+   * Used only for `agent` (sub-agent) calls: read-tier, so no permission
+   * dialogs can interleave.
+   */
+  private async *dispatchParallel(
+    calls: { toolCallId: string; toolName: string; input: unknown }[],
+    ctx: ToolContext,
+    toolResults: ModelMessage,
+  ): AsyncGenerator<AgentEvent, void> {
+    const queue: AgentEvent[] = [];
+    let wake: (() => void) | undefined;
+    const outcomes = new Map<string, { output: string; isError: boolean }>();
+    let pending = calls.length;
+    let abortError: unknown;
+
+    for (const call of calls) {
+      void (async () => {
+        try {
+          const gen = this.dispatchToolCall(call, ctx);
+          for (;;) {
+            const r = await gen.next();
+            if (r.done) {
+              outcomes.set(call.toolCallId, r.value);
+              return;
+            }
+            queue.push(r.value);
+            wake?.();
+          }
+        } catch (err) {
+          if (ctx.abortSignal?.aborted) abortError ??= err;
+          outcomes.set(call.toolCallId, { output: errorMessage(err), isError: true });
+        } finally {
+          pending--;
+          wake?.();
+        }
+      })();
+    }
+
+    while (pending > 0 || queue.length > 0) {
+      if (queue.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        wake = undefined;
+        continue;
+      }
+      yield queue.shift() as AgentEvent;
+    }
+    if (abortError !== undefined) throw abortError;
+
+    for (const call of calls) {
+      const res = outcomes.get(call.toolCallId) ?? { output: "(no result)", isError: true };
+      yield { type: "tool-result", id: call.toolCallId, name: call.toolName, output: res.output, isError: res.isError };
+      (toolResults.content as unknown[]).push({
+        type: "tool-result",
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        output: { type: res.isError ? "error-text" : "text", value: res.output },
+      });
+    }
   }
 
   private async *dispatchToolCall(

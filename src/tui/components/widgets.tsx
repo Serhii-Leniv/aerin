@@ -21,6 +21,8 @@ export function LineInput(props: {
   active: boolean;
   history?: readonly string[];
   commands?: readonly CommandSuggestion[];
+  /** Workspace file paths for @-mention completion. */
+  files?: readonly string[];
 }): React.ReactElement {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -39,9 +41,33 @@ export function LineInput(props: {
     : [];
   const cSugg = Math.min(suggIdx, Math.max(0, matches.length - 1));
 
+  // "@partial" at the cursor → file-path completion.
+  const atMatch = /@([^\s@]*)$/.exec(value.slice(0, cursor));
+  const fileMatches =
+    atMatch && (props.files?.length ?? 0) > 0 && !suggesting
+      ? (props.files ?? [])
+          .filter((f) => fuzzyMatch((atMatch[1] ?? "").toLowerCase(), f.toLowerCase()))
+          .slice(0, 8)
+      : [];
+  const cFile = Math.min(suggIdx, Math.max(0, fileMatches.length - 1));
+
+  const completeFile = (): void => {
+    const f = fileMatches[cFile];
+    if (!f || !atMatch) return;
+    const start = cursor - atMatch[0].length;
+    const next = value.slice(0, start) + "@" + f + " " + value.slice(cursor);
+    set(next, start + f.length + 2);
+    setSuggIdx(0);
+  };
+
   useInput(
     (input, key) => {
       const history = props.history ?? [];
+      if (fileMatches.length > 0 && atMatch && atMatch[0].length > 1) {
+        if (key.upArrow) return setSuggIdx(Math.max(0, cFile - 1));
+        if (key.downArrow) return setSuggIdx(Math.min(fileMatches.length - 1, cFile + 1));
+        if (key.tab || key.return) return completeFile();
+      }
       if (matches.length > 0) {
         if (key.upArrow) return setSuggIdx(Math.max(0, cSugg - 1));
         if (key.downArrow) return setSuggIdx(Math.min(matches.length - 1, cSugg + 1));
@@ -136,6 +162,13 @@ export function LineInput(props: {
           {m.description}
         </Text>
       ))}
+      {atMatch && atMatch[0].length > 1
+        ? fileMatches.map((f, i) => (
+            <Text key={f} color={i === cFile ? "cyan" : "gray"}>
+              {i === cFile ? "❯ " : "  "}@{f}
+            </Text>
+          ))
+        : null}
     </Box>
   );
 }

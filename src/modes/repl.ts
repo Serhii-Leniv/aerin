@@ -8,6 +8,7 @@ import { discoverModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { persistModelChoice } from "../config/config.js";
+import { expandMentions } from "../core/mentions.js";
 
 interface ReplFlags {
   model?: string;
@@ -77,8 +78,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
   const runTurn = async (prompt: string): Promise<void> => {
     running = true;
     let textBuf = "";
+    const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
     try {
-      for await (const event of setup.agent.send(prompt)) {
+      for await (const event of setup.agent.send(expanded)) {
         switch (event.type) {
           case "text-delta":
             if (renderForTty) textBuf += event.text;
