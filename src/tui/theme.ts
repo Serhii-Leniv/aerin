@@ -4,17 +4,18 @@
  * https://terminal.sexy
  */
 export const C = {
-  /** Primary accent: prompts, model name, pickers, logo. */
-  accent: "#cc6666", // red — aerin's primary
-  accentBright: "#b5bd68", // green — logo gradient top, secondary accent
+  /** Primary accent: prompts, model name, pickers, logo — aerin's mint-teal. */
+  accent: "#2dd4bf",
+  /** Logo gradient top: sky blue fading into the teal. */
+  accentBright: "#60a5fa",
   /** Secondary/meta text. */
   dim: "#707880",
   /** Success / done. */
   ok: "#b5bd68",
-  /** Warnings, in-progress, queued. */
+  /** Warnings, in-progress, queued — warm amber, the teal's counterpart. */
   warn: "#f0c674",
-  /** Errors and destructive hints — darker than the accent red. */
-  error: "#a54242",
+  /** Errors and destructive hints. */
+  error: "#cc6666",
   /** Plan mode, section headers. */
   magenta: "#b294bb",
   /** Default foreground (rarely set explicitly — terminal fg is close). */
