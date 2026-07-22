@@ -216,20 +216,21 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // keystroke. One spare row keeps it on the incremental line-diff path.
   const usableRows = Math.max(10, size.rows - 1);
 
-  const [items, setItems] = useState<TranscriptItem[]>(() => {
-    // The startup banner is transcript content, not chrome (Claude Code-style):
-    // it scrolls away as the conversation grows. Live model/ctx stay in the footer.
+  // The startup banner is transcript content, not chrome (Claude Code-style):
+  // it scrolls away as the conversation grows and reappears on /clear.
+  const bannerItem = (model: string, key = 0): TranscriptItem => {
     const art =
       size.columns >= MIN_LOGO_COLUMNS
         ? gradientBanner(LOGO, C.heroGradient).join("\n")
         : gradientLine("✦ Aerin", C.heroGradient);
     const info =
-      paint(`v${VERSION} · `, C.dim) + paint(setup.modelId, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
-    return [
-      { key: 0, kind: "assistant" as const, text: `${art}\n${info}` },
-      ...setup.warnings.map((w, i) => ({ key: i + 1, kind: "error" as const, text: `warning: ${w}` })),
-    ];
-  });
+      paint(`v${VERSION} · `, C.dim) + paint(model, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
+    return { key, kind: "assistant", text: `${art}\n${info}` };
+  };
+  const [items, setItems] = useState<TranscriptItem[]>(() => [
+    bannerItem(setup.modelId),
+    ...setup.warnings.map((w, i) => ({ key: i + 1, kind: "error" as const, text: `warning: ${w}` })),
+  ]);
   const [streaming, setStreaming] = useState("");
   const [working, setWorking] = useState(false);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
@@ -742,7 +743,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
         case "/clear": {
           await setup.agent.clear();
-          setItems([]); // fully dynamic viewport — emptying state empties the screen
+          setItems([bannerItem(modelId, nextKey.current++)]); // fresh start looks like startup
+          setScrollOffset(0);
           setCtxTokens(0);
           setStats({ inTok: 0, outTok: 0, cost: 0 });
           setTodos([]);
