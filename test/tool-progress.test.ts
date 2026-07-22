@@ -150,6 +150,45 @@ describe("tool progress pump", () => {
     expect(agent.totalInputTokens).toBeGreaterThan(0);
   });
 
+  test("inject() delivers a mid-turn user message into the running turn", async () => {
+    const requests: string[] = [];
+    const slowTool: ToolDef<z.ZodTypeAny> = {
+      name: "slow",
+      description: "t",
+      inputSchema: z.object({}),
+      permission: "read",
+      summarize: () => "slow",
+      execute: async () => "tool done",
+    };
+    const model = mockModel([
+      { toolCalls: [{ toolCallId: "c1", toolName: "slow", input: {} }], usage: { inputTokens: 1, outputTokens: 1 } },
+      { text: "final answer", usage: { inputTokens: 1, outputTokens: 1 } },
+    ]);
+    const orig = (model as unknown as { doStream: (o: { prompt: unknown }) => Promise<unknown> }).doStream;
+    (model as unknown as { doStream: (o: { prompt: unknown }) => Promise<unknown> }).doStream = (o) => {
+      requests.push(JSON.stringify(o.prompt));
+      return orig.call(model, o);
+    };
+    const agent = new Agent({
+      model,
+      modelId: "mock/mock",
+      systemPrompt: "s",
+      tools: [slowTool],
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "allow" }),
+      cwd: process.cwd(),
+      allowOutsideCwd: false,
+    });
+    for await (const e of agent.send("start the task")) {
+      if (e.type === "tool-call") agent.inject("ALSO check the tests please");
+    }
+    expect(requests.length).toBe(2);
+    expect(requests[1]).toContain("ALSO check the tests please");
+    expect(requests[1]).toContain("while you were working");
+    // the injected message persists in history
+    expect(JSON.stringify(agent.history)).toContain("ALSO check the tests please");
+  });
+
   test("a pinned goal reaches the system prompt; clearing removes it", async () => {
     const requests: string[] = [];
     const model = mockModel([{ text: "ok", usage: { inputTokens: 1, outputTokens: 1 } }]);

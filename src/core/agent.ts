@@ -196,6 +196,30 @@ export class Agent {
     return this.checkpoints.undoLastChange();
   }
 
+  private injected: string[] = [];
+
+  /**
+   * Deliver a user message INTO the running turn, Claude Code-style: it is
+   * appended after the next batch of tool results (or before a final answer),
+   * so the model sees it mid-task and adjusts course without a new turn.
+   */
+  inject(text: string): void {
+    this.injected.push(text);
+  }
+
+  private drainInjected(newMessages: ModelMessage[]): boolean {
+    if (this.injected.length === 0) return false;
+    for (const text of this.injected.splice(0)) {
+      const m: ModelMessage = {
+        role: "user",
+        content: `[The user sent this while you were working — address it as you continue:]\n${text}`,
+      };
+      this.messages.push(m);
+      newMessages.push(m);
+    }
+    return true;
+  }
+
   private goal: string | undefined;
 
   /** Pin a user-set session goal into every request's system prompt. */
@@ -269,6 +293,7 @@ export class Agent {
   ): AsyncIterable<AgentEvent> {
     const abort = new AbortController();
     this.currentAbort = abort;
+    this.injected.length = 0; // a fresh prompt supersedes stale mid-turn notes
     const newMessages: ModelMessage[] = [];
     const userMessage: ModelMessage =
       images && images.length > 0
@@ -398,6 +423,9 @@ export class Agent {
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };
 
         if (toolCalls.length === 0) {
+          // A mid-turn user message arrived after the model finished its
+          // answer — keep the turn alive so it gets addressed now.
+          if (this.drainInjected(newMessages)) continue;
           finished = true;
           break;
         }
@@ -423,6 +451,8 @@ export class Agent {
         }
         this.messages.push(toolResults);
         newMessages.push(toolResults);
+        // Mid-turn user messages ride along with the tool results.
+        this.drainInjected(newMessages);
       }
       if (!finished) {
         yield {

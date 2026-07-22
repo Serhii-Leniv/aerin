@@ -830,8 +830,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       }
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (workingRef.current) {
-        setQueued((q) => [...q, line]);
-        pushItem("info", `(queued — sends when this turn finishes: ${line.slice(0, 60)})`);
+        if (line.startsWith("/")) {
+          // Commands can't run mid-turn — they queue for after.
+          setQueued((q) => [...q, line]);
+          pushItem("info", `(queued — runs when this turn finishes: ${line.slice(0, 60)})`);
+        } else {
+          // Claude Code-style: the message is injected INTO the running turn.
+          pushItem("user", redactSecrets(line));
+          setup.agent.inject(line);
+        }
         return;
       }
       if (line.startsWith("/")) {
@@ -840,7 +847,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         void runTurn(line);
       }
     },
-    [runCommand, runTurn, pushItem],
+    [runCommand, runTurn, pushItem, setup, exit],
   );
 
   // A pending dialog blocks the agent loop on an unresolved promise — resolve
@@ -1327,7 +1334,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             recallLast={() => inputHistory[inputHistory.length - 1]}
             placeholder={
               working
-                ? "type your next message — it sends when this turn finishes"
+                ? "type to steer the agent mid-task — it sees your message right away"
                 : "ask anything · @file to attach · / for commands"
             }
           />
