@@ -256,7 +256,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const lastSummaryRef = useRef<string | null>(null);
 
   const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
-    setScrollOffset(0); // new content — snap back to following the bottom
+    if (kind === "user") setScrollOffset(0); // your own message — jump back to live
     setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
   }, []);
 
@@ -325,6 +325,22 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const viewportHRef = useRef(viewportH);
   viewportHRef.current = viewportH;
 
+  // Anchor the view while scrolled back: as new lines stream in below, grow
+  // the offset by the same amount so the text on screen doesn't shift. At the
+  // bottom (offset 0) we keep following live output. Shrinking transcripts
+  // (/clear, /compact) clamp the offset back into range.
+  const prevLineCountRef = useRef(0);
+  useEffect(() => {
+    const delta = flatLines.length - prevLineCountRef.current;
+    prevLineCountRef.current = flatLines.length;
+    if (delta === 0) return;
+    setScrollOffset((o) => {
+      if (o === 0) return 0;
+      const max = Math.max(0, flatLines.length - Math.max(4, viewportHRef.current));
+      return Math.min(max, Math.max(0, o + delta));
+    });
+  }, [flatLines.length]);
+
   const scrollBy = useCallback((deltaLines: number) => {
     setScrollOffset((o) => {
       const max = Math.max(0, flatLinesRef.current.length - Math.max(4, viewportHRef.current));
@@ -332,15 +348,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     });
   }, []);
 
-  // Mouse wheel scrolls the transcript by lines, three per notch — unless a
-  // picker is open, in which case the picker owns the wheel.
+  // Mouse wheel scrolls the transcript one line per event. Terminals emit one
+  // event per system scroll-line (typically 3 per notch), and same-burst
+  // events batch into a single render — so a notch is one smooth 3-line step,
+  // matching native terminal scrolling. Pickers own the wheel when open.
   const pickerOpenRef = useRef(false);
   useEffect(() => {
     const m = setup.mouse;
     if (!m) return;
     const onWheel = (dir: number): void => {
       if (pickerOpenRef.current) return;
-      scrollBy(dir < 0 ? 3 : -3);
+      scrollBy(dir < 0 ? 1 : -1);
     };
     m.on("wheel", onWheel);
     return () => {
