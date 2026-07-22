@@ -29,6 +29,7 @@ import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { gradientBanner, gradientLine } from "../terminal/gradient.js";
+import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -318,17 +319,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Flat line buffer of the transcript — the unit of scrolling. Blank lines
-  // reproduce the item margins so the scrolled view matches the live view.
+  // Flat VISUAL-row buffer of the transcript — the unit of scrolling. Long
+  // lines are pre-wrapped (ANSI-aware) to the terminal width so one scroll
+  // step is one terminal row, matching the live view. Blank lines reproduce
+  // the item margins.
   const [viewportH, setViewportH] = useState(10);
   const flatLines = React.useMemo(() => {
+    const width = Math.max(20, size.columns - 2);
     const lines: { key: string; kind: TranscriptItem["kind"]; text: string }[] = [];
     for (const item of items) {
       item.text.split("\n").forEach((line, i) => {
-        lines.push({
-          key: `${item.key}:${i}`,
-          kind: item.kind,
-          text: item.kind === "user" && i === 0 ? `❯ ${line}` : line,
+        const prefixed = item.kind === "user" && i === 0 ? `❯ ${line}` : line;
+        wrapAnsiLine(prefixed, width).forEach((row, j) => {
+          lines.push({ key: `${item.key}:${i}:${j}`, kind: item.kind, text: row });
         });
       });
       if (item.kind === "assistant" || item.kind === "user") {
@@ -336,7 +339,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       }
     }
     return lines;
-  }, [items]);
+  }, [items, size.columns]);
   const flatLinesRef = useRef(flatLines);
   flatLinesRef.current = flatLines;
   const viewportHRef = useRef(viewportH);
@@ -365,21 +368,32 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     });
   }, []);
 
-  // Mouse wheel scrolls the transcript one line per event. Terminals emit one
-  // event per system scroll-line (typically 3 per notch), and same-burst
-  // events batch into a single render — so a notch is one smooth 3-line step,
-  // matching native terminal scrolling. Pickers own the wheel when open.
+  // Mouse wheel scrolls the transcript one row per event (a notch is ~3
+  // events — native terminal feel). Events are coalesced on a ~16ms frame so
+  // a fast spin applies as a few larger hops instead of queueing dozens of
+  // renders that keep playing after the wheel stops. Pickers own the wheel.
   const pickerOpenRef = useRef(false);
+  const wheelAcc = useRef(0);
+  const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const m = setup.mouse;
     if (!m) return;
     const onWheel = (dir: number): void => {
       if (pickerOpenRef.current) return;
-      scrollBy(dir < 0 ? 1 : -1);
+      wheelAcc.current += dir < 0 ? 1 : -1;
+      wheelTimer.current ??= setTimeout(() => {
+        wheelTimer.current = null;
+        const delta = wheelAcc.current;
+        wheelAcc.current = 0;
+        if (delta !== 0) scrollBy(delta);
+      }, 16);
     };
     m.on("wheel", onWheel);
     return () => {
       m.off("wheel", onWheel);
+      if (wheelTimer.current) clearTimeout(wheelTimer.current);
+      wheelTimer.current = null;
+      wheelAcc.current = 0;
     };
   }, [setup.mouse, scrollBy]);
 
