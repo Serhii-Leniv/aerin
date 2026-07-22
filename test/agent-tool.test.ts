@@ -22,7 +22,7 @@ describe("agent tool", () => {
     expect(tool.permission).toBe("read");
     expect(tool.inputSchema.safeParse({ description: "x", prompt: "y" }).success).toBe(true);
     expect(tool.inputSchema.safeParse({ description: "x" }).success).toBe(false);
-    expect(tool.summarize({ description: "find stuff", prompt: "y" })).toBe("Agent: find stuff");
+    expect(tool.summarize({ description: "find stuff", prompt: "y" })).toBe("Agent(find stuff)");
   });
 
   test("runs a sub-agent and returns its report, emitting one final update", async () => {

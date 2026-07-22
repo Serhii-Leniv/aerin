@@ -29,7 +29,7 @@ export const globTool: ToolDef<z.ZodTypeAny> = {
     pattern: z.string().describe("Glob pattern"),
     path: z.string().optional().describe("Base directory (default: cwd)"),
   }),
-  summarize: (i) => `Glob ${i.pattern}`,
+  summarize: (i) => `Glob(${i.pattern})`,
   async execute(input, ctx) {
     const base = input.path ? path.resolve(ctx.cwd, input.path) : ctx.cwd;
     const ig = await loadGitignore(base);
@@ -102,7 +102,7 @@ export const grepTool: ToolDef<z.ZodTypeAny> = {
     context: z.number().int().min(0).max(10).optional().describe("Lines of context around matches"),
     mode: z.enum(["content", "files"]).optional().describe("Output mode (default content)"),
   }),
-  summarize: (i) => `Grep /${i.pattern}/${i.glob ? ` in ${i.glob}` : ""}`,
+  summarize: (i) => `Search("${i.pattern}"${i.glob ? ` in ${i.glob}` : ""})`,
   async execute(input, ctx) {
     const searchPath = input.path ? path.resolve(ctx.cwd, input.path) : ctx.cwd;
     const mode = input.mode ?? "content";

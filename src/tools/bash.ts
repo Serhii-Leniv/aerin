@@ -78,7 +78,7 @@ export const bashTool: ToolDef<z.ZodTypeAny> = {
       .describe("Timeout in milliseconds (default 120000)"),
     cwd: z.string().optional().describe("Working directory override"),
   }),
-  summarize: (i) => `Run: ${i.command.length > 80 ? i.command.slice(0, 77) + "..." : i.command}`,
+  summarize: (i) => `Bash(${i.command.length > 80 ? i.command.slice(0, 77) + "..." : i.command})`,
   async execute(input, ctx) {
     const shell = detectShell();
     const timeout = Math.min(input.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);

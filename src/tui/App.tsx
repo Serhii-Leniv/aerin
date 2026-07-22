@@ -77,6 +77,23 @@ const SLASH_COMMANDS = [
   { name: "/exit", description: "quit aerin" },
 ] as const;
 
+/** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
+function withDot(text: string): string {
+  const lines = text.split("\n");
+  return ["⏺ " + (lines[0] ?? ""), ...lines.slice(1).map((l) => "  " + l)].join("\n");
+}
+
+/** One-line result stat for the ⎿ line: short outputs verbatim, long ones as a count. */
+function resultStat(output: string, isError: boolean): string {
+  const trimmed = output.trim();
+  if (!trimmed) return "(no output)";
+  const lines = trimmed.split("\n");
+  const first = (lines[0] ?? "").slice(0, 120);
+  if (isError) return first;
+  if (lines.length === 1 && first.length <= 100) return first;
+  return `${lines.length} lines`;
+}
+
 /** Concatenated text parts of a saved message (string or parts array). */
 function messageText(m: ModelMessage): string {
   if (typeof m.content === "string") return m.content;
@@ -139,7 +156,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     flushTimer.current = null;
     // Render markdown live while streaming — partial constructs (an unclosed
     // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
-    setStreaming(renderMarkdown(streamBuf.current));
+    setStreaming(withDot(renderMarkdown(streamBuf.current)));
   }, []);
 
   const runTurn = useCallback(
@@ -177,15 +194,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               const text = streamBuf.current;
               streamBuf.current = "";
               setStreaming("");
-              if (text.trim()) pushItem("assistant", renderMarkdown(text));
+              if (text.trim()) pushItem("assistant", withDot(renderMarkdown(text)));
               break;
             }
             case "tool-call":
               pushItem("tool", `⏺ ${event.summary}`);
               break;
             case "tool-result": {
-              const first = (event.output.split("\n")[0] ?? "").slice(0, 100);
-              pushItem(event.isError ? "tool-error" : "info", `  ⎿ ${event.isError ? "✗ " : ""}${first}`);
+              const stat = resultStat(event.output, event.isError);
+              pushItem(event.isError ? "tool-error" : "info", `  ⎿  ${event.isError ? "✗ " : ""}${stat}`);
               break;
             }
             case "compaction":
@@ -209,7 +226,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                 const tok = fmtTokens(event.inputTokens + event.outputTokens);
                 pushItem(
                   event.status === "error" ? "tool-error" : "info",
-                  `  ⎿ agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${tok} tok${event.costUsd ? `, ~$${event.costUsd.toFixed(4)}` : ""})`,
+                  `  ⎿  agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${tok} tok${event.costUsd ? `, ~$${event.costUsd.toFixed(4)}` : ""})`,
                 );
                 // Sub-agent spend is folded into the agent totals by the core loop.
                 setStats({
@@ -260,14 +277,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         if (Array.isArray(m.content)) {
           for (const part of m.content as { type?: string; text?: string; toolName?: string }[]) {
             if (part?.type === "text" && part.text?.trim()) {
-              add.push({ key: nextKey.current++, kind: "assistant", text: renderMarkdown(part.text) });
+              add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(part.text)) });
             } else if (part?.type === "tool-call" && part.toolName) {
               add.push({ key: nextKey.current++, kind: "tool", text: `⏺ ${part.toolName}` });
             }
           }
         } else {
           const t = messageText(m);
-          if (t.trim()) add.push({ key: nextKey.current++, kind: "assistant", text: renderMarkdown(t) });
+          if (t.trim()) add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(t)) });
         }
       }
     }
@@ -465,11 +482,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                     ? "cyan"
                     : item.kind === "error" || item.kind === "tool-error"
                       ? "red"
-                      : item.kind === "tool"
-                        ? "yellow"
-                        : item.kind === "info"
-                          ? "gray"
-                          : undefined
+                      : item.kind === "info"
+                        ? "gray"
+                        : undefined
                 }
               >
                 {item.kind === "user" ? `> ${item.text}` : item.text}

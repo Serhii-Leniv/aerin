@@ -42,7 +42,7 @@ export const readTool: ToolDef<z.ZodTypeAny> = {
     offset: z.number().int().min(1).optional().describe("1-based line to start from"),
     limit: z.number().int().min(1).optional().describe("Max lines to return (default 2000)"),
   }),
-  summarize: (i) => `Read ${i.path}`,
+  summarize: (i) => `Read(${i.path})`,
   async execute(input, ctx) {
     const abs = resolvePath(input.path, ctx);
     const buf = await fs.readFile(abs);
@@ -72,7 +72,7 @@ export const writeTool: ToolDef<z.ZodTypeAny> = {
     path: z.string().describe("File path (absolute or relative to cwd)"),
     content: z.string().describe("Full file content to write"),
   }),
-  summarize: (i) => `Write ${i.path}`,
+  summarize: (i) => `Write(${i.path})`,
   async preview(input, ctx) {
     const abs = resolvePath(input.path, ctx);
     let old = "";
@@ -103,7 +103,7 @@ export const editTool: ToolDef<z.ZodTypeAny> = {
     new_string: z.string().describe("Replacement text"),
     replace_all: z.boolean().optional().describe("Replace every occurrence (default false)"),
   }),
-  summarize: (i) => `Edit ${i.path}`,
+  summarize: (i) => `Update(${i.path})`,
   async preview(input, ctx) {
     const abs = resolvePath(input.path, ctx);
     try {
@@ -160,7 +160,7 @@ export const lsTool: ToolDef<z.ZodTypeAny> = {
   inputSchema: z.object({
     path: z.string().optional().describe("Directory to list (default: cwd)"),
   }),
-  summarize: (i) => `List ${i.path ?? "."}`,
+  summarize: (i) => `List(${i.path ?? "."})`,
   async execute(input, ctx) {
     const abs = resolvePath(input.path ?? ".", ctx);
     const entries = await fs.readdir(abs, { withFileTypes: true });

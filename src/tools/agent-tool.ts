@@ -53,7 +53,7 @@ export function createAgentTool(deps: AgentToolDeps): ToolDef<z.ZodTypeAny> {
         ),
     }),
     permission: "read",
-    summarize: (input) => `Agent: ${(input as AgentToolInput).description}`,
+    summarize: (input) => `Agent(${(input as AgentToolInput).description})`,
     async execute(rawInput, ctx: ToolContext): Promise<string> {
       const input = rawInput as AgentToolInput;
       const { model, modelId } = deps.getSubagentModel?.() ?? deps.getModel();
