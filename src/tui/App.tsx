@@ -83,6 +83,17 @@ const SLASH_COMMANDS = [
   { name: "/exit", description: "quit aerin" },
 ] as const;
 
+/** Block-character wordmark shown in the startup banner (28 cols × 4 rows). */
+const LOGO = [
+  "▄▀▀▀▄ █▀▀▀▀ █▀▀▀▄ ▀█▀ █▄   █",
+  "█▄▄▄█ █▄▄▄  █▄▄▄▀  █  █ ▀▄ █",
+  "█   █ █     █  ▀▄  █  █   ▀█",
+  "▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀ ▀    ▀",
+] as const;
+/** Gradient, top to bottom. */
+const LOGO_COLORS = ["cyanBright", "cyanBright", "cyan", "cyan"] as const;
+const MIN_LOGO_COLUMNS = 38;
+
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 
 /** Approximate terminal rows a text block occupies, accounting for wrapping. */
@@ -137,8 +148,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // spacer below the transcript shrinks as this grows, keeping the input
   // pinned to the bottom edge until the window fills — after which the
   // terminal scrolls naturally and the input stays at the bottom anyway.
+  const showLogo = (stdout?.columns ?? 80) >= MIN_LOGO_COLUMNS;
+  const bannerRows = showLogo ? 13 : 10;
   const usedRows = useRef(
-    9 + setup.warnings.reduce((n, w) => n + countRows(`warning: ${w}`, stdout?.columns ?? 80), 0),
+    bannerRows + setup.warnings.reduce((n, w) => n + countRows(`warning: ${w}`, stdout?.columns ?? 80), 0),
   );
 
   const [items, setItems] = useState<TranscriptItem[]>(() => [
@@ -375,7 +388,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
           setCtxTokens(0);
           setTodos([]);
-          usedRows.current = 9; // fresh banner only — input drops back to the bottom
+          usedRows.current = bannerRows; // fresh banner only — input drops back to the bottom
           return;
         }
         case "/plan": {
@@ -575,12 +588,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               marginBottom={1}
               alignSelf="flex-start"
             >
-              <Text>
-                <Text color="cyan" bold>
-                  ✦ Aerin
+              {showLogo ? (
+                LOGO.map((row, i) => (
+                  <Text key={i} bold color={LOGO_COLORS[i] ?? "cyan"}>
+                    {row}
+                  </Text>
+                ))
+              ) : (
+                <Text>
+                  <Text color="cyan" bold>
+                    ✦ Aerin
+                  </Text>
                 </Text>
-                <Text color="gray"> v{VERSION} — open-source coding agent</Text>
-              </Text>
+              )}
+              <Text color="gray">v{VERSION} — open-source coding agent</Text>
               <Text> </Text>
               <Text>
                 <Text color="gray">model </Text>
