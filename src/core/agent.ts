@@ -13,6 +13,9 @@ const MAX_STREAM_RETRIES = 2;
 
 /** Transient provider failures worth retrying: rate limits, overload, network. */
 export function isRetryableError(err: unknown): boolean {
+  // Exhausted quotas won't recover in seconds — retrying just wastes a minute.
+  const raw = errorMessage(err).toLowerCase();
+  if (/per.day|daily|quota|insufficient.credit|billing|payment/.test(raw)) return false;
   if (APICallError.isInstance(err)) {
     if (err.isRetryable) return true;
     const sc = err.statusCode;
@@ -136,21 +139,28 @@ export class Agent {
   }
 
   /**
-   * Request messages with the system prompt inlined. On Anthropic models,
-   * cache breakpoints go on the system prompt and the latest message so the
-   * unchanged prefix is billed at the cached rate (~10%) on every iteration.
-   * Clones — never mutates — stored history, so the moving breakpoint is not
-   * persisted to the session file.
+   * Request prompt fields. Non-Anthropic models get the plain `system` option.
+   * Anthropic models get the system prompt as a message with cache breakpoints
+   * on it and on the latest message (plus allowSystemInMessages, the sanctioned
+   * form), so the unchanged prefix bills at the cached rate (~10%) on every
+   * iteration. Clones — never mutates — stored history, so the moving
+   * breakpoint is not persisted to the session file.
    */
-  private requestMessages(): ModelMessage[] {
-    const system = { role: "system", content: this.opts.systemPrompt } as ModelMessage;
-    if (!this.opts.modelId.startsWith("anthropic/")) return [system, ...this.messages];
+  private requestPrompt(): {
+    system?: string;
+    messages: ModelMessage[];
+    allowSystemInMessages?: boolean;
+  } {
+    if (!this.opts.modelId.startsWith("anthropic/")) {
+      return { system: this.opts.systemPrompt, messages: this.messages };
+    }
     const cacheOpts = { anthropic: { cacheControl: { type: "ephemeral" } } };
     const withCache = (m: ModelMessage): ModelMessage =>
       ({ ...m, providerOptions: { ...(m as { providerOptions?: object }).providerOptions, ...cacheOpts } }) as ModelMessage;
+    const system = withCache({ role: "system", content: this.opts.systemPrompt } as ModelMessage);
     const last = this.messages[this.messages.length - 1];
-    if (!last) return [withCache(system)];
-    return [withCache(system), ...this.messages.slice(0, -1), withCache(last)];
+    const messages = last ? [system, ...this.messages.slice(0, -1), withCache(last)] : [system];
+    return { messages, allowSystemInMessages: true };
   }
 
   /** Declare tool schemas only — never `execute` — so the permission gate interposes. */
@@ -197,7 +207,7 @@ export class Agent {
         for (let attempt = 0; ; attempt++) {
           result = streamText({
             model: this.opts.model,
-            messages: this.requestMessages(),
+            ...this.requestPrompt(),
             tools: this.buildToolSet(),
             abortSignal: abort.signal,
             // Errors surface through our event stream; without this the SDK

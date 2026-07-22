@@ -83,6 +83,18 @@ const SLASH_COMMANDS = [
   { name: "/exit", description: "quit aerin" },
 ] as const;
 
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+/** Approximate terminal rows a text block occupies, accounting for wrapping. */
+function countRows(text: string, columns: number): number {
+  let rows = 0;
+  for (const line of text.split("\n")) {
+    const len = line.replace(ANSI_RE, "").length;
+    rows += Math.max(1, Math.ceil(len / Math.max(20, columns)));
+  }
+  return rows;
+}
+
 /** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
   const lines = text.split("\n");
@@ -121,12 +133,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const { exit } = useApp();
   const { stdout } = useStdout();
 
-  // Until the first message, a spacer pushes the input to the bottom of the
-  // window (banner top, prompt bottom — opencode-style). Once the conversation
-  // starts, layout flows naturally so scrollback keeps working.
-  const [startupPad, setStartupPad] = useState(
-    () => setup.agent.history.length === 0 && !props.initialPrompt,
-  );
+  // Rows already consumed by <Static> transcript content (banner ≈ 10). A
+  // spacer below the transcript shrinks as this grows, keeping the input
+  // pinned to the bottom edge until the window fills — after which the
+  // terminal scrolls naturally and the input stays at the bottom anyway.
+  const usedRows = useRef(10 + setup.warnings.length);
 
   const [items, setItems] = useState<TranscriptItem[]>(() => [
     { key: 0, kind: "banner", text: "" },
@@ -164,9 +175,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workingRef = useRef(false);
 
-  const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
-    setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
-  }, []);
+  const pushItem = useCallback(
+    (kind: TranscriptItem["kind"], text: string) => {
+      usedRows.current +=
+        countRows(text, stdout?.columns ?? 80) + (kind === "assistant" || kind === "user" ? 1 : 0);
+      setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
+    },
+    [stdout],
+  );
 
   // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {
@@ -321,7 +337,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
       }
     }
+    for (const item of add) {
+      usedRows.current +=
+        countRows(item.text, stdout?.columns ?? 80) + (item.kind === "assistant" || item.kind === "user" ? 1 : 0);
+    }
     setItems((prev) => [...prev, ...add]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const resumeSession = useCallback(
@@ -352,7 +373,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
           setCtxTokens(0);
           setTodos([]);
-          setStartupPad(true); // back to the fresh-start layout: banner top, input bottom
+          usedRows.current = 10; // fresh banner only — input drops back to the bottom
           return;
         }
         case "/plan": {
@@ -461,7 +482,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     (value: string) => {
       const line = value.trim();
       if (!line || workingRef.current) return;
-      setStartupPad(false);
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (line.startsWith("/")) {
         runCommand(line);
@@ -524,6 +544,23 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
 
+  // Spacer between transcript and the dynamic bottom section: keeps the input
+  // pinned to the bottom edge while the window is not yet full.
+  const columns = stdout?.columns ?? 80;
+  const dynamicRows =
+    (streaming ? countRows(streaming, columns) : 0) +
+    (thinking && reasoningTail ? countRows(reasoningTail, columns) + 1 : 0) +
+    subagents.size +
+    (todos.length > 0 ? todos.length + 2 : 0) +
+    (working && !permission && !question ? 1 : 0) +
+    (permission ? 14 : 0) +
+    (question ? question.options.length + 5 : 0) +
+    (modelPicker ? 18 : 0) +
+    (sessionPicker ? Math.min(sessionPicker.length, 14) + 3 : 0) +
+    (inputActive ? 3 : 0) +
+    1; // status bar
+  const spacerRows = Math.max(0, (stdout?.rows ?? 24) - usedRows.current - dynamicRows);
+
   return (
     <Box flexDirection="column">
       <Static items={items}>
@@ -575,6 +612,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           )
         }
       </Static>
+
+      {spacerRows > 0 ? <Box height={spacerRows} /> : null}
 
       {streaming ? <Text>{streaming}</Text> : null}
       {thinking && reasoningTail ? (
@@ -718,11 +757,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             }}
           />
         </Box>
-      ) : null}
-
-      {startupPad && inputActive ? (
-        // banner ≈ 9 rows, warnings, input box 3, status 1, breathing room 2
-        <Box height={Math.max(0, (stdout?.rows ?? 24) - 15 - setup.warnings.length)} />
       ) : null}
 
       {inputActive ? (
