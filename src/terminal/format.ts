@@ -1,3 +1,15 @@
+import type { ModelMessage } from "ai";
+
+/** Concatenated text parts of a saved message (string or parts array). */
+export function messageText(m: ModelMessage): string {
+  if (typeof m.content === "string") return m.content;
+  if (!Array.isArray(m.content)) return "";
+  return (m.content as { type?: string; text?: string }[])
+    .filter((p) => p?.type === "text" && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("");
+}
+
 /** "just now", "5m ago", "3h ago", "2d ago" — for session lists. */
 export function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

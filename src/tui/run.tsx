@@ -1,7 +1,10 @@
 import React from "react";
 import { render } from "ink";
+import type { ModelMessage } from "ai";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
+import { renderMarkdown } from "../terminal/markdown.js";
+import { messageText } from "../terminal/format.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -63,6 +66,31 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     await instance.waitUntilExit();
   } finally {
     leaveAltScreen();
+    // The alt screen took the conversation with it — leave a plain transcript
+    // in the normal terminal so the session survives in scrollback.
+    printTranscript(setup.agent.history);
     await stopMcpServers(setup.mcpConnections);
   }
+}
+
+function printTranscript(history: readonly ModelMessage[]): void {
+  const out: string[] = [];
+  for (const m of history) {
+    if (m.role === "user") {
+      const t = messageText(m).trim();
+      if (t) out.push(`> ${t}`);
+    } else if (m.role === "assistant") {
+      if (Array.isArray(m.content)) {
+        for (const part of m.content as { type?: string; text?: string; toolName?: string }[]) {
+          if (part?.type === "text" && part.text?.trim()) out.push(renderMarkdown(part.text));
+          else if (part?.type === "tool-call" && part.toolName) out.push(`⏺ ${part.toolName}`);
+        }
+      } else {
+        const t = messageText(m).trim();
+        if (t) out.push(renderMarkdown(t));
+      }
+    }
+  }
+  if (out.length === 0) return;
+  process.stdout.write(`\n── aerin session transcript ──\n\n${out.join("\n\n")}\n\n`);
 }

@@ -13,7 +13,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { relativeTime } from "../terminal/format.js";
+import { messageText, relativeTime } from "../terminal/format.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
@@ -78,9 +78,6 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
-const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /resume /plan /exit
-Esc interrupts a running turn. Ctrl+C twice exits.`;
-
 const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
   { name: "/plan", description: "toggle plan mode — read-only exploration, agent presents a plan" },
@@ -119,16 +116,6 @@ function resultStat(output: string, isError: boolean): string {
   return `${lines.length} lines`;
 }
 
-/** Concatenated text parts of a saved message (string or parts array). */
-function messageText(m: ModelMessage): string {
-  if (typeof m.content === "string") return m.content;
-  if (!Array.isArray(m.content)) return "";
-  return (m.content as { type?: string; text?: string }[])
-    .filter((p) => p?.type === "text" && typeof p.text === "string")
-    .map((p) => p.text)
-    .join("");
-}
-
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1e3).toFixed(n >= 100_000 ? 0 : 1)}k`;
@@ -164,6 +151,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [denyReasonMode, setDenyReasonMode] = useState(false);
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
+  const [helpMenu, setHelpMenu] = useState(false);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [question, setQuestion] = useState<{
     q: string;
@@ -367,7 +355,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       const arg = rest.join(" ");
       switch (cmd) {
         case "/help":
-          pushItem("info", HELP_TEXT);
+          setHelpMenu(true);
           return;
         case "/clear": {
           await setup.agent.clear();
@@ -542,7 +530,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
+  const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question && !helpMenu;
 
   // Transcript alignment: content flows from the top (Claude Code-style) while
   // it fits; once it outgrows the viewport it bottom-aligns so the newest line
@@ -728,6 +716,25 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               setQuestionOther(false);
             }}
           />
+        </Box>
+      ) : null}
+
+      {helpMenu ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Text color="cyan">Commands — ↑/↓ to choose, Enter to run, Esc to close</Text>
+          <FilterSelect
+            active={true}
+            items={SLASH_COMMANDS.map((c) => ({
+              label: `${c.name.padEnd(9)} ${c.description}`,
+              value: c.name,
+            }))}
+            onCancel={() => setHelpMenu(false)}
+            onSelect={(name) => {
+              setHelpMenu(false);
+              if (name !== "/help") runCommand(name);
+            }}
+          />
+          <Text color="gray">Esc interrupts a running turn · Ctrl+C twice exits · Tab completes /commands</Text>
         </Box>
       ) : null}
 
