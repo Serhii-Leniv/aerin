@@ -849,9 +849,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (workingRef.current) {
         if (line.startsWith("/")) {
-          // Commands can't run mid-turn — they queue for after.
+          // Commands can't run mid-turn — they queue for after and show as a
+          // dim stack above the input (Claude Code-style) until they run.
           setQueued((q) => [...q, line]);
-          pushItem("info", `(queued — runs when this turn finishes: ${line.slice(0, 60)})`);
         } else {
           // Claude Code-style: the message is injected INTO the running turn.
           pushItem("user", redactSecrets(line));
@@ -1017,6 +1017,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             return flatLines.slice(start, end).map((l) => (
               <Box key={l.key} flexShrink={0}>
                 <Text
+                  wrap="truncate-end"
                   color={
                     l.kind === "user"
                       ? C.accent
@@ -1335,6 +1336,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
+      {queued.length > 0 ? (
+        <Box flexDirection="column" paddingX={2}>
+          {queued.map((q, i) => (
+            <Text key={i} color={C.dim} dimColor wrap="truncate-end">
+              ❯ {q}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
+
       {inputActive ? (
         <Box
           borderStyle="round"
@@ -1385,7 +1396,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {goalSet ? <Text color={C.accent}> · goal</Text> : null}
           {planMode ? <Text color={C.magenta}> · plan (shift+tab)</Text> : null}
           {mode === "accept" ? <Text color={C.ok}>{" · >> accept edits (shift+tab)"}</Text> : null}
-          {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}
           {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}
           {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}
         </Text>
