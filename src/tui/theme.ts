@@ -1,49 +1,47 @@
 /**
- * Aerin's color theme: Navy — the whole gamma is keyed to dark blue, not just
- * the accent. Grays are navy-grays, the foreground is blue-tinted, and the
- * semantic colors are the Tokyo Night family, tuned to harmonize with blue.
- * True navy is unreadable as text on a dark terminal, so the brand splits by
- * background (the Klein-void discipline): royal/steel blue renditions on
- * dark, true navy on light. Central palette: UI code refers to roles, never
- * raw colors, so retheming is a one-file change. The palette is mutable so
- * background detection can swap in the light-terminal variants before first
- * render.
+ * Aerin's color theme: Emerald Night — jade over dark moss. The whole gamma
+ * is keyed to deep green: green-gray meta text, mint-tinted foreground, and
+ * a jade → mint → lime hero gradient. Success stays a distinct lighter mint;
+ * plan/reasoning takes a cool sky counterpoint so the green key never blurs
+ * with semantics. Central palette: UI code refers to roles, never raw colors,
+ * so retheming is a one-file change. The palette is mutable so background
+ * detection can swap in the light-terminal variants before first render.
  */
 export const C = {
   /** Interactive accent: prompts, model name, pickers, links. */
-  accent: "#7aa2f7", // steel blue — navy's readable voice on dark
+  accent: "#6ee7b7", // spring mint — the readable voice on dark
   /** Main brand hero: the wordmark, prompt marker, borders. */
-  accentBright: "#4d8bff", // royal blue — hero moments, bold
-  /** Secondary/meta text — navy-gray, the key color's undertone. */
-  dim: "#565f89",
-  /** Success / done — herb green, harmonizes with blue. */
-  ok: "#9ece6a",
-  /** Warnings, in-progress, queued — warm amber. */
-  warn: "#e0af68",
-  /** Errors and destructive hints — rose red. */
-  error: "#f7768e",
-  /** Plan mode, section headers, reasoning — periwinkle. */
-  magenta: "#bb9af7",
+  accentBright: "#2dd4a7", // jade — hero moments, bold
+  /** Secondary/meta text — moss-gray, the key color's undertone. */
+  dim: "#56705f",
+  /** Success / done — pale mint, lighter than the brand jade. */
+  ok: "#86efac",
+  /** Warnings, in-progress, queued — dry amber. */
+  warn: "#d9b45f",
+  /** Errors and destructive hints — soft coral. */
+  error: "#ef8f8f",
+  /** Plan mode, section headers, reasoning — sky counterpoint. */
+  magenta: "#93c5fd",
   /** Code accents (params, punctuation warmth). */
-  orange: "#ff9e64",
-  /** Default foreground — blue-tinted, carries the navy key into prose. */
-  fg: "#c0caf5",
-  /** Hero gradient (wordmark, brand moments): royal → ice → periwinkle aurora. */
-  heroGradient: ["#4d8bff", "#7dcfff", "#bb9af7"] as readonly string[],
+  orange: "#d9a662",
+  /** Default foreground — mint-tinted, carries the green key into prose. */
+  fg: "#c3e8d1",
+  /** Hero gradient (wordmark, brand moments): jade → mint → lime. */
+  heroGradient: ["#2dd4a7", "#86efac", "#d9f99d"] as readonly string[],
 };
 
-/** Same roles re-picked for white/light terminal backgrounds — true navy. */
+/** Same roles re-picked for white/light terminal backgrounds — deep forest. */
 const LIGHT: typeof C = {
-  accent: "#2e7de9", // day blue
-  accentBright: "#1e3a8a", // true navy hero
-  dim: "#68709a",
-  ok: "#587539",
-  warn: "#8f6c1e",
-  error: "#c53b53",
-  magenta: "#7847bd",
-  orange: "#b15c00",
-  fg: "#2e3f6e", // navy-tinted ink
-  heroGradient: ["#1e3a8a", "#2e7de9", "#6d28d9"] as readonly string[],
+  accent: "#047857", // emerald ink
+  accentBright: "#065f46", // deep jade hero
+  dim: "#5b6e63",
+  ok: "#2f7d4a",
+  warn: "#8a6d1e",
+  error: "#c04343",
+  magenta: "#2563eb",
+  orange: "#a16207",
+  fg: "#173b2c", // forest ink
+  heroGradient: ["#065f46", "#059669", "#65a30d"] as readonly string[],
 };
 
 /** Swap the palette for a light terminal background. Call before first render. */

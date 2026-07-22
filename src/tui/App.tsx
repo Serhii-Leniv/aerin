@@ -142,6 +142,15 @@ const SLASH_COMMANDS = [
   { name: "/exit", description: "quit aerin" },
 ] as const;
 
+/** The aerin frog, perched left of the wordmark (ASCII-only — Windows-safe). */
+const FROG = [
+  "          ",
+  "  @..@    ",
+  " (----)   ",
+  "( >__< )  ",
+  "^^ ~~ ^^  ",
+  "          ",
+] as const;
 /** ANSI Shadow wordmark shown in the startup banner (37 cols × 6 rows). */
 const LOGO = [
   " █████╗ ███████╗██████╗ ██╗███╗   ██╗",
@@ -151,7 +160,9 @@ const LOGO = [
   "██║  ██║███████╗██║  ██║██║██║ ╚████║",
   "╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝",
 ] as const;
-const MIN_LOGO_COLUMNS = 42;
+/** Frog + wordmark share one diagonal gradient sweep. */
+const BANNER_ROWS = LOGO.map((row, i) => (FROG[i] ?? " ".repeat(10)) + row);
+const MIN_LOGO_COLUMNS = 52;
 
 /** Truecolor ANSI paint for banner text baked into the transcript. */
 function paint(s: string, hex: string, bold = false): string {
@@ -220,7 +231,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // it scrolls away as the conversation grows. Live model/ctx stay in the footer.
     const art =
       size.columns >= MIN_LOGO_COLUMNS
-        ? gradientBanner(LOGO, C.heroGradient).join("\n")
+        ? gradientBanner(BANNER_ROWS, C.heroGradient).join("\n")
         : gradientLine("✦ Aerin", C.heroGradient);
     const info =
       paint(`v${VERSION} · `, C.dim) + paint(setup.modelId, C.accent) + paint(` · ${shortenPath(setup.cwd)}`, C.dim);
