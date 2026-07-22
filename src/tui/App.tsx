@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Static, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -34,18 +34,26 @@ export interface TuiSetup {
 
 /**
  * Ink rendering rules baked in here:
- * - Everything above the fold lives in <Static> (append-only) to avoid
- *   O(n^2) redraws and flicker; only the in-flight message is dynamic.
+ * - Full-screen app on the alternate screen buffer (opencode-style): a fixed
+ *   height/width root, a pinned header, a flex-grown transcript viewport with
+ *   overflow hidden + justifyContent flex-end (newest content sticks to the
+ *   bottom, old lines clip at the top), and a bottom section (dialogs, input,
+ *   status) whose height the layout engine subtracts automatically. No
+ *   <Static>, no spacer math — Yoga owns the geometry, so nothing drifts.
+ * - Only the last VIEWPORT_ITEMS transcript items render (older ones are
+ *   clipped anyway); that bounds per-frame work.
  * - Stream re-renders are batched to ~50ms, never per-token setState.
- * - No alt-screen: normal scrollback is a feature.
  * - Raw mode eats Ctrl+C, so double-Ctrl+C-to-exit is implemented explicitly.
  */
 
 interface TranscriptItem {
   key: number;
-  kind: "banner" | "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
+  kind: "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
   text: string;
 }
+
+/** Only this many trailing items are rendered — everything above is clipped anyway. */
+const VIEWPORT_ITEMS = 150;
 
 /** Grouped picker rows: one header per provider, models beneath it. */
 function buildPickerItems(models: DiscoveredModel[]): { label: string; value: string; header?: boolean }[] {
@@ -94,18 +102,6 @@ const LOGO = [
 const LOGO_COLORS = ["cyanBright", "cyanBright", "cyan", "cyan"] as const;
 const MIN_LOGO_COLUMNS = 38;
 
-const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
-
-/** Approximate terminal rows a text block occupies, accounting for wrapping. */
-function countRows(text: string, columns: number): number {
-  let rows = 0;
-  for (const line of text.split("\n")) {
-    const len = line.replace(ANSI_RE, "").length;
-    rows += Math.max(1, Math.ceil(len / Math.max(20, columns)));
-  }
-  return rows;
-}
-
 /** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
   const lines = text.split("\n");
@@ -144,20 +140,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const { exit } = useApp();
   const { stdout } = useStdout();
 
-  // Rows already consumed by <Static> transcript content (banner ≈ 10). A
-  // spacer below the transcript shrinks as this grows, keeping the input
-  // pinned to the bottom edge until the window fills — after which the
-  // terminal scrolls naturally and the input stays at the bottom anyway.
-  const showLogo = (stdout?.columns ?? 80) >= MIN_LOGO_COLUMNS;
-  const bannerRows = showLogo ? 13 : 10;
-  const usedRows = useRef(
-    bannerRows + setup.warnings.reduce((n, w) => n + countRows(`warning: ${w}`, stdout?.columns ?? 80), 0),
-  );
+  // Terminal geometry — the root Box is sized to it and Yoga does the rest.
+  const [size, setSize] = useState({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
+  useEffect(() => {
+    const onResize = (): void => setSize({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
+    stdout?.on("resize", onResize);
+    return () => {
+      stdout?.off("resize", onResize);
+    };
+  }, [stdout]);
+  const showLogo = size.columns >= MIN_LOGO_COLUMNS;
 
-  const [items, setItems] = useState<TranscriptItem[]>(() => [
-    { key: 0, kind: "banner", text: "" },
-    ...setup.warnings.map((w, i) => ({ key: i + 1, kind: "error" as const, text: `warning: ${w}` })),
-  ]);
+  const [items, setItems] = useState<TranscriptItem[]>(() =>
+    setup.warnings.map((w, i) => ({ key: i, kind: "error" as const, text: `warning: ${w}` })),
+  );
   const [streaming, setStreaming] = useState("");
   const [working, setWorking] = useState(false);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
@@ -190,14 +186,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workingRef = useRef(false);
 
-  const pushItem = useCallback(
-    (kind: TranscriptItem["kind"], text: string) => {
-      usedRows.current +=
-        countRows(text, stdout?.columns ?? 80) + (kind === "assistant" || kind === "user" ? 1 : 0);
-      setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
-    },
-    [stdout],
-  );
+  const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
+    setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
+  }, []);
 
   // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {
@@ -352,12 +343,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
       }
     }
-    for (const item of add) {
-      usedRows.current +=
-        countRows(item.text, stdout?.columns ?? 80) + (item.kind === "assistant" || item.kind === "user" ? 1 : 0);
-    }
     setItems((prev) => [...prev, ...add]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const resumeSession = useCallback(
@@ -381,14 +367,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           return;
         case "/clear": {
           await setup.agent.clear();
-          // Really clear: wipe screen + scrollback, then re-print the banner.
-          // Old <Static> items stay in state (its internal cursor is append-only)
-          // but the ANSI wipe has already removed them from the terminal.
-          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
-          setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
+          setItems([]); // fully dynamic viewport — emptying state empties the screen
           setCtxTokens(0);
           setTodos([]);
-          usedRows.current = bannerRows; // fresh banner only — input drops back to the bottom
           return;
         }
         case "/plan": {
@@ -559,85 +540,62 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
 
-  // Keep the input pinned to the bottom edge: measure the two dynamic regions
-  // for real (no guessing — suggestion lists, dialogs, and wrapping all count)
-  // and size the spacer so transcript + spacer + dynamics fill the window.
-  // Once the transcript alone exceeds the window, the spacer is 0 and natural
-  // terminal scrolling keeps the input at the bottom.
-  const midRef = useRef<DOMElement | null>(null);
-  const bottomRef = useRef<DOMElement | null>(null);
-  const [measured, setMeasured] = useState({ mid: 0, bottom: 4 });
-  useEffect(() => {
-    const mid = midRef.current ? measureElement(midRef.current).height : 0;
-    const bottom = bottomRef.current ? measureElement(bottomRef.current).height : 0;
-    setMeasured((prev) => (prev.mid === mid && prev.bottom === bottom ? prev : { mid, bottom }));
-  });
-  const spacerRows = Math.max(0, (stdout?.rows ?? 24) - usedRows.current - measured.mid - measured.bottom);
-
   return (
-    <Box flexDirection="column">
-      <Static items={items}>
-        {(item) =>
-          item.kind === "banner" ? (
-            <Box
-              key={item.key}
-              flexDirection="column"
-              borderStyle="round"
-              borderColor="cyan"
-              paddingX={2}
-              marginBottom={1}
-              alignSelf="flex-start"
-            >
-              {showLogo ? (
-                LOGO.map((row, i) => (
-                  <Text key={i} bold color={LOGO_COLORS[i] ?? "cyan"}>
-                    {row}
-                  </Text>
-                ))
-              ) : (
-                <Text>
-                  <Text color="cyan" bold>
-                    ✦ Aerin
-                  </Text>
-                </Text>
-              )}
-              <Text color="gray">v{VERSION} — open-source coding agent</Text>
-              <Text> </Text>
-              <Text>
-                <Text color="gray">model </Text>
-                {setup.modelId}
-              </Text>
-              <Text>
-                <Text color="gray">cwd   </Text>
-                {setup.cwd}
-              </Text>
-              <Text> </Text>
-              <Text color="gray">/help commands · /model switch model · Esc interrupt · Ctrl+C twice quit</Text>
-            </Box>
-          ) : (
-            <Box key={item.key} marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}>
-              <Text
-                color={
-                  item.kind === "user"
-                    ? "cyan"
-                    : item.kind === "error" || item.kind === "tool-error"
-                      ? "red"
-                      : item.kind === "info"
-                        ? "gray"
-                        : undefined
-                }
-              >
-                {item.kind === "user" ? `> ${item.text}` : item.text}
-              </Text>
-            </Box>
-          )
-        }
-      </Static>
+    <Box flexDirection="column" height={size.rows} width={size.columns}>
+      {/* Pinned header */}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor="cyan"
+        paddingX={2}
+        alignSelf="flex-start"
+        flexShrink={0}
+      >
+        {showLogo ? (
+          LOGO.map((row, i) => (
+            <Text key={i} bold color={LOGO_COLORS[i] ?? "cyan"}>
+              {row}
+            </Text>
+          ))
+        ) : (
+          <Text color="cyan" bold>
+            ✦ Aerin
+          </Text>
+        )}
+        <Text color="gray">
+          v{VERSION} · {modelId} · {setup.cwd}
+        </Text>
+      </Box>
 
-      {/* Streamed content flows directly under the transcript so a finished
-          message lands exactly where it streamed — no jump. */}
-      <Box ref={midRef} flexDirection="column">
-      {streaming ? <Text>{streaming}</Text> : null}
+      {/* Transcript viewport: newest content sticks to the bottom, older
+          lines clip away at the top. */}
+      <Box flexDirection="column" flexGrow={1} overflowY="hidden" justifyContent="flex-end">
+        {items.slice(-VIEWPORT_ITEMS).map((item) => (
+          <Box
+            key={item.key}
+            marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}
+            flexShrink={0}
+          >
+            <Text
+              color={
+                item.kind === "user"
+                  ? "cyan"
+                  : item.kind === "error" || item.kind === "tool-error"
+                    ? "red"
+                    : item.kind === "info"
+                      ? "gray"
+                      : undefined
+              }
+            >
+              {item.kind === "user" ? `> ${item.text}` : item.text}
+            </Text>
+          </Box>
+        ))}
+      {streaming ? (
+        <Box flexShrink={0}>
+          <Text>{streaming}</Text>
+        </Box>
+      ) : null}
       {thinking && reasoningTail ? (
         <Box flexDirection="column" marginBottom={0}>
           <Text color="gray" dimColor>
@@ -664,13 +622,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
       {working && !permission && !question ? (
-        <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
+        <Box flexShrink={0}>
+          <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
+        </Box>
       ) : null}
       </Box>
 
-      {spacerRows > 0 ? <Box height={spacerRows} /> : null}
-
-      <Box ref={bottomRef} flexDirection="column">
+      {/* Bottom section: dialogs, input, status — pinned by layout. */}
+      <Box flexDirection="column" flexShrink={0}>
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
           <Text color="yellow">Permission: {permission.req.summary}</Text>

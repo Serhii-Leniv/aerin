@@ -47,13 +47,22 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),
   };
 
-  // Start with a clean viewport so the banner renders at the top of the window
-  // (2J clears the visible screen only — the user's scrollback is preserved).
-  process.stdout.write("\x1b[2J\x1b[H");
+  // Full-screen app on the alternate screen buffer (opencode-style): the UI
+  // owns the whole window, and the user's shell scrollback is restored intact
+  // on exit.
+  const leaveAltScreen = (): void => {
+    process.stdout.write("\x1b[?1049l");
+  };
+  process.stdout.write("\x1b[?1049h\x1b[H");
+  process.once("exit", leaveAltScreen);
 
-  const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
-    exitOnCtrlC: false,
-  });
-  await instance.waitUntilExit();
-  await stopMcpServers(setup.mcpConnections);
+  try {
+    const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
+      exitOnCtrlC: false,
+    });
+    await instance.waitUntilExit();
+  } finally {
+    leaveAltScreen();
+    await stopMcpServers(setup.mcpConnections);
+  }
 }
