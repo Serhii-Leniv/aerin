@@ -6,7 +6,7 @@ import type { OnPermission, PermissionDecision, PermissionRequest } from "../cor
 import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
 import { renderCommand, type CustomCommand } from "../core/commands.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
-import { PROVIDERS, resolveApiKey } from "../providers/registry.js";
+import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
 import { PROVIDER_CATALOG, catalogEntry } from "../providers/catalog.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
@@ -84,7 +84,7 @@ function buildPickerItems(
     if (m.provider !== lastProvider) {
       lastProvider = m.provider;
       items.push({
-        label: `${PROVIDERS[m.provider]?.name ?? m.provider}`,
+        label: PROVIDERS[m.provider]?.name ?? catalogEntry(m.provider)?.name ?? m.provider,
         value: `__header_${m.provider}`,
         header: true,
       });
@@ -432,6 +432,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     for (const w of warnings) pushItem("error", w);
     if (models.length > 0) {
       setModelPicker(models);
+    } else if (providersWithKeys(setup.config).length === 0) {
+      // Nothing connected at all — the fix is a provider, not a model list.
+      setModelPicker(null);
+      pushItem("info", "(no providers connected yet — pick one to connect first)");
+      setConnect({ step: "pick" });
     } else {
       // No provider reachable — fall back to the known-model metadata table.
       pushItem(
