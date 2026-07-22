@@ -100,6 +100,12 @@ export class Agent {
     await this.opts.store?.rewrite([]);
   }
 
+  /** Swap in a previously saved session (store + full message history). */
+  loadSession(store: SessionStore, messages: ModelMessage[]): void {
+    this.opts.store = store;
+    this.messages = [...messages];
+  }
+
   async compactNow(): Promise<void> {
     this.messages = await compact(this.opts.model, this.messages);
     await this.opts.store?.rewrite(this.messages);

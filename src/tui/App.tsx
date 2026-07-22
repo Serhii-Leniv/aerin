@@ -8,7 +8,7 @@ import { MODEL_TABLE, modelInfo } from "../providers/models.js";
 import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
-import { SessionStore } from "../session/store.js";
+import { SessionStore, type SessionSummary } from "../session/store.js";
 import { renderMarkdown } from "./markdown.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
@@ -64,7 +64,7 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
-const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /sessions /exit
+const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /sessions /resume [id] /exit
 Esc interrupts a running turn. Ctrl+C twice exits.`;
 
 const SLASH_COMMANDS = [
@@ -72,6 +72,7 @@ const SLASH_COMMANDS = [
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/sessions", description: "list sessions in this directory" },
+  { name: "/resume", description: "resume a previous session — pick from a list, or /resume id" },
   { name: "/help", description: "show commands and keys" },
   { name: "/exit", description: "quit aerin" },
 ] as const;
@@ -95,6 +96,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [permission, setPermission] = useState<PendingPermission | null>(null);
   const [denyReasonMode, setDenyReasonMode] = useState(false);
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
+  const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -234,6 +236,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     [setup, pushItem, flushStream],
   );
 
+  const resumeSession = useCallback(
+    async (id: string): Promise<void> => {
+      const { store, messages } = await SessionStore.open(setup.cwd, id);
+      setup.agent.loadSession(store, messages);
+      pushItem("info", `Resumed session ${id} (${messages.length} messages)`);
+    },
+    [setup, pushItem],
+  );
+
   const handleCommand = useCallback(
     async (line: string): Promise<void> => {
       const [cmd, ...rest] = line.split(/\s+/);
@@ -247,6 +258,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           pushItem("info", "(history cleared)");
           return;
         case "/compact":
+          if (setup.agent.history.length === 0) {
+            pushItem("info", "(nothing to compact — history is empty)");
+            return;
+          }
           await setup.agent.compactNow();
           pushItem("info", "(compacted)");
           return;
@@ -259,9 +274,23 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           pushItem(
             "info",
             sessions.length
-              ? sessions.slice(0, 15).map((s) => `${s.id}  ${s.createdAt}  ${s.model}`).join("\n")
+              ? sessions.slice(0, 15).map((s) => `${s.id}  ${s.createdAt}  ${s.model}`).join("\n") +
+                  "\n(/resume to switch to one)"
               : "(no sessions)",
           );
+          return;
+        }
+        case "/resume": {
+          if (arg) {
+            await resumeSession(arg);
+            return;
+          }
+          const sessions = await SessionStore.list(setup.cwd);
+          if (sessions.length === 0) {
+            pushItem("info", "(no sessions to resume)");
+            return;
+          }
+          setSessionPicker(sessions);
           return;
         }
         case "/model": {
@@ -293,7 +322,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           pushItem("error", `Unknown command: ${cmd}. Try /help.`);
       }
     },
-    [setup, pushItem, exit],
+    [setup, pushItem, exit, resumeSession],
+  );
+
+  // A failing command must never take down the TUI (or vanish silently).
+  const runCommand = useCallback(
+    (line: string): void => {
+      handleCommand(line).catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
+    },
+    [handleCommand, pushItem],
   );
 
   const switchModel = useCallback(
@@ -316,12 +353,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       if (!line || workingRef.current) return;
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (line.startsWith("/")) {
-        void handleCommand(line);
+        runCommand(line);
       } else {
         void runTurn(line);
       }
     },
-    [handleCommand, runTurn],
+    [runCommand, runTurn],
   );
 
   // Global keys: Esc interrupts; double Ctrl+C exits.
@@ -345,17 +382,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   });
 
   useEffect(() => {
-    if (setup.modelUnavailable) {
-      // No usable model — make the user pick one before anything can be sent
-      // (never auto-select a paid model on their behalf).
-      void handleCommand("/model");
-    } else if (props.initialPrompt) {
-      void runTurn(props.initialPrompt);
-    }
+    // With no usable model the startup warning already says to run /model;
+    // keep the input active (auto-opening the picker would swallow typed
+    // commands) and skip any initial prompt — the stub model can't run it.
+    if (props.initialPrompt && !setup.modelUnavailable) void runTurn(props.initialPrompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inputActive = !working && !permission && !modelPicker;
+  const inputActive = !working && !permission && !modelPicker && !sessionPicker;
 
   return (
     <Box flexDirection="column">
@@ -486,6 +520,26 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             onSelect={(id) => {
               setModelPicker(null);
               switchModel(id);
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {sessionPicker ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Text color="cyan">Resume a session — type to filter, Esc to cancel</Text>
+          <FilterSelect
+            active={true}
+            items={sessionPicker.map((s) => ({
+              label: `${s.id}  ${s.createdAt.slice(0, 19).replace("T", " ")}  ${s.model}${s.title ? `  ${s.title}` : ""}`,
+              value: s.id,
+            }))}
+            onCancel={() => setSessionPicker(null)}
+            onSelect={(id) => {
+              setSessionPicker(null);
+              resumeSession(id).catch((err) =>
+                pushItem("error", err instanceof Error ? err.message : String(err)),
+              );
             }}
           />
         </Box>

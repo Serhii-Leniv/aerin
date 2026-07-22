@@ -23,12 +23,15 @@ const HELP = `Commands:
   /models       list models available from your providers
   /model <id>   switch model (any provider/model-id)
   /sessions     list sessions in this directory
+  /resume [id]  resume a session (latest if no id)
   /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
 
 /** Plain readline REPL — no Ink. Kept forever as the TUI's debugging lifeline. */
 export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise<void> {
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  // Created only after setup: attaching readline earlier would emit (and drop)
+  // any input lines that arrive while setup is still running, e.g. piped stdin.
+  let rl!: ReturnType<typeof readline.createInterface>;
 
   const askPermission = async (req: PermissionRequest): Promise<PermissionDecision> => {
     stdout.write(`\n  ${req.summary}\n`);
@@ -41,6 +44,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
   };
 
   const setup = await setupAgent(flags, askPermission);
+  rl = readline.createInterface({ input: stdin, output: stdout });
   for (const w of setup.warnings) stderr.write(`warning: ${w}\n`);
   const { VERSION } = await import("../version.js");
   stdout.write(`✦ Aerin v${VERSION} — ${setup.modelId}\n  ${setup.cwd} · /help for commands\n\n`);
@@ -93,30 +97,42 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     );
   };
 
-  try {
-    if (initialPrompt) await runTurn(initialPrompt);
-    for (;;) {
-      let line: string;
-      try {
-        line = (await rl.question("> ")).trim();
-      } catch {
-        break; // readline closed
-      }
-      if (!line) continue;
-      if (line === "/exit" || line === "/quit") break;
+  // "quit" ends the REPL; anything else continues.
+  const handleLine = async (line: string): Promise<"quit" | undefined> => {
+      if (!line) return undefined;
+      if (line === "/exit" || line === "/quit") return "quit";
       if (line === "/help") {
         stdout.write(HELP + "\n");
-        continue;
+        return undefined;
       }
       if (line === "/clear") {
         await setup.agent.clear();
         stdout.write("  (history cleared)\n");
-        continue;
+        return undefined;
       }
       if (line === "/compact") {
-        await setup.agent.compactNow();
-        stdout.write("  (compacted)\n");
-        continue;
+        try {
+          await setup.agent.compactNow();
+          stdout.write("  (compacted)\n");
+        } catch (err) {
+          stdout.write(`  compact failed: ${err instanceof Error ? err.message : err}\n`);
+        }
+        return undefined;
+      }
+      if (line === "/resume" || line.startsWith("/resume ")) {
+        const id = line.slice("/resume".length).trim() || (await SessionStore.latest(setup.cwd))?.id;
+        if (!id) {
+          stdout.write("  (no sessions to resume)\n");
+          return undefined;
+        }
+        try {
+          const opened = await SessionStore.open(setup.cwd, id);
+          setup.agent.loadSession(opened.store, opened.messages);
+          stdout.write(`  resumed ${id} (${opened.messages.length} messages)\n`);
+        } catch (err) {
+          stdout.write(`  resume failed: ${err instanceof Error ? err.message : err}\n`);
+        }
+        return undefined;
       }
       if (line === "/models") {
         stdout.write("  fetching model lists from your providers...\n");
@@ -124,7 +140,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         for (const w of warnings) stderr.write(`  warning: ${w}\n`);
         if (models.length === 0) stdout.write("  (no provider reachable — set an API key first)\n");
         for (const m of models) stdout.write(`  ${m.id}\n`);
-        continue;
+        return undefined;
       }
       if (line.startsWith("/model ")) {
         const id = line.slice("/model ".length).trim();
@@ -134,7 +150,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         } catch (err) {
           stdout.write(`  ${err instanceof Error ? err.message : err}\n`);
         }
-        continue;
+        return undefined;
       }
       if (line === "/sessions") {
         const sessions = await SessionStore.list(setup.cwd);
@@ -142,9 +158,20 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           stdout.write(`  ${s.id}  ${s.createdAt}  ${s.model}\n`);
         }
         if (sessions.length === 0) stdout.write("  (none)\n");
-        continue;
+        return undefined;
       }
       await runTurn(line);
+      return undefined;
+  };
+
+  try {
+    if (initialPrompt) await runTurn(initialPrompt);
+    // The async iterator (unlike rl.question) buffers lines that arrive while
+    // a command is still being processed — required for piped stdin.
+    stdout.write("> ");
+    for await (const raw of rl) {
+      if (await handleLine(raw.trim()) === "quit") break;
+      stdout.write("> ");
     }
   } finally {
     rl.close();
