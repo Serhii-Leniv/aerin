@@ -188,10 +188,11 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
       try {
         const bare = await list(config);
         if (!bare) return; // no key / not running — silently skipped
-        const freeTier = catalogEntry(provider)?.freeTier === true;
         for (const m of bare) {
           const fullId = `${provider}/${m.id}`;
           const known = knownModelInfo(fullId);
+          // "free" is shown only for genuinely $0 pricing (formatModelLabel);
+          // provider-level free tiers are indicated in /connect and the meter.
           models.push({
             ...m,
             id: fullId,
@@ -199,7 +200,6 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
             contextWindow: m.contextWindow ?? known?.contextWindow,
             inputPerMTok: m.inputPerMTok ?? known?.inputPerMTok,
             outputPerMTok: m.outputPerMTok ?? known?.outputPerMTok,
-            ...(freeTier ? { note: "free tier" } : {}),
           });
         }
       } catch (err) {

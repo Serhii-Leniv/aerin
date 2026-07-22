@@ -29,10 +29,10 @@ export function goalCommand(ctx: CommandCtx, arg: string): string {
   }
   if (arg) {
     ctx.agent.setGoal(arg);
-    return `⌖ goal pinned: ${arg}`;
+    return `goal pinned: ${arg}`;
   }
   return ctx.agent.currentGoal
-    ? `⌖ current goal: ${ctx.agent.currentGoal}`
+    ? `current goal: ${ctx.agent.currentGoal}`
     : "(no goal set — /goal <text> pins one into every request)";
 }
 
@@ -124,7 +124,7 @@ export function statusCommand(ctx: CommandCtx, x: StatusExtras): string {
     `aerin v${x.version}${x.latestVersion && x.latestVersion !== x.version ? `  (v${x.latestVersion} available — aerin update)` : ""}`,
     `  session   ${ctx.sessionId} · ${ctx.agent.history.length} messages`,
     `  model     ${x.modelId}${pct}`,
-    `  mode      ${mode}${ctx.agent.currentGoal ? ` · ⌖ ${ctx.agent.currentGoal.slice(0, 50)}` : ""}`,
+    `  mode      ${mode}${ctx.agent.currentGoal ? ` · goal: ${ctx.agent.currentGoal.slice(0, 50)}` : ""}`,
     `  cwd       ${x.cwdDisplay ?? ctx.cwd}`,
     ...(x.costLine ? [`  tokens    ${x.costLine}`] : []),
     `  mcp       ${ctx.mcpConnections.length > 0 ? ctx.mcpConnections.map((c) => c.serverName).join(", ") : "none"}`,

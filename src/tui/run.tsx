@@ -132,24 +132,19 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
 }
 
 function printTranscript(history: readonly ModelMessage[]): void {
+  // Prompts and replies only — tool-call noise ("ls", "read", ...) has no
+  // value in shell scrollback and reads as ugly leftovers.
   const out: string[] = [];
   for (const m of history) {
     if (m.role === "user") {
       const t = messageText(m).trim();
-      if (t) out.push(`> ${t}`);
+      if (t && !t.startsWith("[Conversation compacted")) out.push(`> ${t.split("\n")[0]?.slice(0, 200) ?? ""}`);
     } else if (m.role === "assistant") {
-      if (Array.isArray(m.content)) {
-        for (const part of m.content as { type?: string; text?: string; toolName?: string }[]) {
-          if (part?.type === "text" && part.text?.trim()) out.push(renderMarkdown(part.text));
-          else if (part?.type === "tool-call" && part.toolName) out.push(`⏺ ${part.toolName}`);
-        }
-      } else {
-        const t = messageText(m).trim();
-        if (t) out.push(renderMarkdown(t));
-      }
+      const t = messageText(m).trim();
+      if (t) out.push(renderMarkdown(t));
     }
   }
   if (out.length === 0) return;
   // Never let key-shaped strings land in shell scrollback.
-  process.stdout.write(`\n── aerin session transcript ──\n\n${redactSecrets(out.join("\n\n"))}\n\n`);
+  process.stdout.write(`\n─── aerin session ───\n\n${redactSecrets(out.join("\n\n"))}\n\n`);
 }

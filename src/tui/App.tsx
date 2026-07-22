@@ -152,13 +152,13 @@ const LOGO = [
 ] as const;
 const MIN_LOGO_COLUMNS = 42;
 
-/** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
+/** "● " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
   const lines = text.split("\n");
-  return ["⏺ " + (lines[0] ?? ""), ...lines.slice(1).map((l) => "  " + l)].join("\n");
+  return ["● " + (lines[0] ?? ""), ...lines.slice(1).map((l) => "  " + l)].join("\n");
 }
 
-/** One-line result stat for the ⎿ line: short outputs verbatim, long ones as a count. */
+/** One-line result stat for the result line: short outputs verbatim, long ones as a count. */
 function resultStat(output: string, isError: boolean): string {
   const trimmed = output.trim();
   if (!trimmed) return "(no output)";
@@ -364,7 +364,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       // parts (display stays clean).
       const expanded = await expandMentions(prompt, setup.cwd).catch(() => ({ text: prompt, images: [] }));
       if (expanded.images.length > 0) {
-        pushItem("info", `  ⎿  attached ${expanded.images.map((i) => i.name).join(", ")}`);
+        pushItem("info", `  └ attached ${expanded.images.map((i) => i.name).join(", ")}`);
       }
       try {
         for await (const event of setup.agent.send(expanded.text, expanded.images)) {
@@ -400,7 +400,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               break;
             }
             case "tool-call":
-              pushItem("tool", `⏺ ${event.summary}`);
+              pushItem("tool", `● ${event.summary}`);
               lastSummaryRef.current = event.summary;
               break;
             case "tool-result": {
@@ -413,7 +413,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               };
               pushItem(
                 event.isError ? "tool-error" : "info",
-                `  ⎿  ${event.isError ? "✗ " : ""}${stat}${collapsed ? " (ctrl+o expand)" : ""}`,
+                `  └ ${event.isError ? "✗ " : ""}${stat}${collapsed ? " (ctrl+o expand)" : ""}`,
               );
               break;
             }
@@ -447,7 +447,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                 const tok = fmtTokens(event.inputTokens + event.outputTokens);
                 pushItem(
                   event.status === "error" ? "tool-error" : "info",
-                  `  ⎿  agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${tok} tok${event.costUsd ? `, ~$${event.costUsd.toFixed(4)}` : ""})`,
+                  `  └ agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${tok} tok${event.costUsd ? `, ~$${event.costUsd.toFixed(4)}` : ""})`,
                 );
                 // Sub-agent spend is folded into the agent totals by the core loop.
                 setStats({
@@ -526,7 +526,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             if (part?.type === "text" && part.text?.trim()) {
               add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(part.text)) });
             } else if (part?.type === "tool-call" && part.toolName) {
-              add.push({ key: nextKey.current++, kind: "tool", text: `⏺ ${part.toolName}` });
+              add.push({ key: nextKey.current++, kind: "tool", text: `● ${part.toolName}` });
             }
           }
         } else {
@@ -836,7 +836,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       if (last) {
         const lines = last.output.split("\n");
         const shown = lines.length > 300 ? [...lines.slice(0, 300), `[… ${lines.length - 300} more lines]`] : lines;
-        pushItem(last.isError ? "tool-error" : "info", `  ⎿  ${last.summary} — full output:\n${shown.join("\n")}`);
+        pushItem(last.isError ? "tool-error" : "info", `  └ ${last.summary} — full output:\n${shown.join("\n")}`);
         lastToolResultRef.current = null; // one-shot: re-arms on the next tool result
       }
       return;
@@ -1015,7 +1015,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         <Box flexDirection="column">
           {[...subagents.entries()].map(([id, s]) => (
             <Text key={id} color={C.dim}>
-              {"  "}◐ {s.description} — {s.toolCalls} tools · {s.lastTool ?? "starting"}
+              {"  "}» {s.description} — {s.toolCalls} tools · {s.lastTool ?? "starting"}
             </Text>
           ))}
         </Box>
@@ -1024,7 +1024,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         <Box flexDirection="column" borderStyle="round" borderColor={C.dim} paddingX={1} alignSelf="flex-start">
           {todos.map((t, i) => (
             <Text key={i} color={t.status === "done" ? C.ok : t.status === "active" ? C.accent : C.dim}>
-              {t.status === "done" ? "☑" : t.status === "active" ? "▸" : "☐"} {t.text}
+              {t.status === "done" ? "[x]" : t.status === "active" ? "[>]" : "[ ]"} {t.text}
             </Text>
           ))}
         </Box>
@@ -1126,7 +1126,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             items={[
               { label: "Featured", value: "__header_featured", header: true },
               ...PROVIDER_CATALOG.map((e) => ({
-                label: `${e.name}${resolveApiKey(e.id, setup.config) ? "  ✓ connected" : ""}`,
+                label: `${e.name}${e.freeTier ? " · free tier" : ""}${resolveApiKey(e.id, setup.config) ? "  ✓ connected" : ""}`,
                 value: e.id,
               })),
               { label: "Custom OpenAI-compatible endpoint…", value: "__custom__" },
@@ -1321,9 +1321,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
               : ""}
           </Text>
-          {goalSet ? <Text color={C.accent}> · ⌖ goal</Text> : null}
-          {planMode ? <Text color={C.magenta}> · ⏸ plan (shift+tab)</Text> : null}
-          {mode === "accept" ? <Text color={C.ok}> · ⏵⏵ accept edits (shift+tab)</Text> : null}
+          {goalSet ? <Text color={C.accent}> · goal</Text> : null}
+          {planMode ? <Text color={C.magenta}> · plan (shift+tab)</Text> : null}
+          {mode === "accept" ? <Text color={C.ok}>{" · >> accept edits (shift+tab)"}</Text> : null}
           {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}
           {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}
           {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}

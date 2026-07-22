@@ -113,7 +113,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
             }
             break;
           case "tool-call":
-            stdout.write(`\n  ⏺ ${event.summary}\n`);
+            stdout.write(`\n  ● ${event.summary}\n`);
             break;
           case "tool-result":
             if (event.isError) stdout.write(`  ✗ ${firstLine(event.output)}\n`);
@@ -129,7 +129,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           case "subagent-update":
             if (event.status !== "running") {
               stdout.write(
-                `  ⎿  agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${event.inputTokens + event.outputTokens} tok)\n`,
+                `  └ agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${event.inputTokens + event.outputTokens} tok)\n`,
               );
             }
             break;
