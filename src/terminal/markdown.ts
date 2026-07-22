@@ -4,7 +4,7 @@ import { C, rgbOf } from "../tui/theme.js";
 
 /**
  * Terminal markdown rendering: width-aware reflow (re-configured when the
- * terminal width changes), styled to aerin's synthwave palette via raw ANSI
+ * terminal width changes), styled to aerin's theme palette via raw ANSI
  * (no chalk dependency), with a fallback pass for inline markdown that
  * marked-terminal leaves literal inside list items.
  */
@@ -20,15 +20,14 @@ const cyan = wrap(() => C.accent); // links
 const dim = wrap(() => C.dim); // blockquotes, hr
 const yellow = wrap(() => C.warn); // inline code
 
-// Synthwave syntax theme for fenced code (highlight.js token names).
-const pinkPlain = wrap(() => C.accentBright);
+// Syntax theme for fenced code (highlight.js token names).
 const green = wrap(() => C.ok);
 const purple = wrap(() => C.magenta);
 const orange = wrap(() => C.orange);
 const fg = wrap(() => C.fg);
 const id = (s: string) => s;
 const SYNTAX_THEME = {
-  keyword: pinkPlain,
+  keyword: purple,
   built_in: cyan,
   type: purple,
   literal: purple,
@@ -42,7 +41,7 @@ const SYNTAX_THEME = {
   comment: dim,
   doctag: dim,
   meta: dim,
-  tag: pinkPlain,
+  tag: purple,
   name: cyan,
   attr: green,
   attribute: green,
