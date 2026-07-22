@@ -88,6 +88,25 @@ export async function persistModelChoice(modelId: string, file: string = GLOBAL_
   await fs.writeFile(file, JSON.stringify(raw, null, 2) + "\n", "utf8");
 }
 
+/** Save a provider API key (and optional baseURL) to the global config. */
+export async function persistProviderKey(
+  provider: string,
+  apiKey: string,
+  baseURL?: string,
+  file: string = GLOBAL_CONFIG_FILE,
+): Promise<void> {
+  const raw = ((await readJsonIfExists(file)) ?? {}) as Record<string, unknown>;
+  const providers = (raw["providers"] ?? {}) as Record<string, Record<string, unknown>>;
+  providers[provider] = {
+    ...providers[provider],
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+  };
+  raw["providers"] = providers;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(raw, null, 2) + "\n", "utf8");
+}
+
 /** Append a permission rule to the project settings file. */
 export async function persistProjectRule(cwd: string, rule: string): Promise<void> {
   const file = projectSettingsFile(cwd);

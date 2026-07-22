@@ -30,6 +30,9 @@ export const MODEL_TABLE: Record<string, ModelInfo> = {
   "google/gemini-pro-latest": { contextWindow: 1_000_000, maxOutput: 65_536 },
   "google/gemini-3-flash-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
   "google/gemini-3-pro-preview": { contextWindow: 1_000_000, maxOutput: 65_536 },
+  // xAI (best effort — verify against x.ai pricing)
+  "xai/grok-4": { contextWindow: 256_000, maxOutput: 64_000, inputPerMTok: 3, outputPerMTok: 15 },
+  "xai/grok-code-fast-1": { contextWindow: 256_000, maxOutput: 32_000, inputPerMTok: 0.2, outputPerMTok: 1.5 },
 };
 
 export function modelInfo(modelId: string): ModelInfo {

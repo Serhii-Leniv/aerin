@@ -1,5 +1,5 @@
 import type { AerinConfig } from "../config/config.js";
-import { resolveApiKey } from "./registry.js";
+import { customProviders, resolveApiKey } from "./registry.js";
 import { MODEL_TABLE } from "./models.js";
 
 /**
@@ -96,6 +96,15 @@ const listers: Record<string, Lister> = {
     });
   },
 
+  async xai(config) {
+    const key = resolveApiKey("xai", config);
+    if (!key) return undefined;
+    const data = (await fetchJson("https://api.x.ai/v1/models", {
+      Authorization: `Bearer ${key}`,
+    })) as { data?: { id: string }[] };
+    return (data.data ?? []).map((m) => ({ id: m.id }));
+  },
+
   async ollama(config) {
     const baseURL = config.providers?.["ollama"]?.baseURL ?? "http://localhost:11434/v1";
     const root = baseURL.replace(/\/v1\/?$/, "");
@@ -131,8 +140,23 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
   const models: DiscoveredModel[] = [];
   const warnings: string[] = [];
 
+  // Custom OpenAI-compatible providers: query <baseURL>/models like OpenAI.
+  const customListers: Record<string, Lister> = {};
+  for (const name of customProviders(config)) {
+    customListers[name] = async (cfg) => {
+      const baseURL = cfg.providers?.[name]?.baseURL;
+      if (!baseURL) return undefined;
+      const key = cfg.providers?.[name]?.apiKey;
+      const data = (await fetchJson(
+        `${baseURL.replace(/\/$/, "")}/models`,
+        key ? { Authorization: `Bearer ${key}` } : {},
+      )) as { data?: { id: string }[] };
+      return (data.data ?? []).map((m) => ({ id: m.id }));
+    };
+  }
+
   await Promise.all(
-    Object.entries(listers).map(async ([provider, list]) => {
+    Object.entries({ ...listers, ...customListers }).map(async ([provider, list]) => {
       try {
         const bare = await list(config);
         if (!bare) return; // no key / not running — silently skipped

@@ -5,6 +5,8 @@ import { PermissionPolicy, targetFor } from "../permissions/policy.js";
 import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
 import { shouldCompact, compact } from "./compact.js";
+import { Checkpoints } from "./checkpoints.js";
+import path from "node:path";
 import type { SessionStore } from "../session/store.js";
 
 const MAX_ITERATIONS = 50;
@@ -81,6 +83,7 @@ export class Agent {
   totalOutputTokens = 0;
   totalCostUsd = 0;
   private currentAbort: AbortController | undefined;
+  private checkpoints = new Checkpoints();
 
   constructor(private opts: AgentOptions) {
     this.messages = [...(opts.initialMessages ?? [])];
@@ -123,6 +126,11 @@ export class Agent {
   loadSession(store: SessionStore, messages: ModelMessage[]): void {
     this.opts.store = store;
     this.messages = [...messages];
+  }
+
+  /** Undo the file changes of the most recent turn that changed anything. */
+  async undo(): Promise<string[]> {
+    return this.checkpoints.undoLastChange();
   }
 
   async compactNow(): Promise<void> {
@@ -180,6 +188,7 @@ export class Agent {
     this.messages.push(userMessage);
     newMessages.push(userMessage);
     await this.opts.store?.ensureTitle(input);
+    this.checkpoints.beginTurn();
 
     const toolCtx: ToolContext = {
       cwd: this.opts.cwd,
@@ -444,6 +453,14 @@ export class Agent {
         if (decision.scope === "project") {
           await persistProjectRule(this.opts.cwd, rule).catch(() => {});
         }
+      }
+    }
+
+    // Capture the file's pre-change state so /undo can restore this turn.
+    if (def.permission === "write") {
+      const p = (input as { path?: unknown })?.path;
+      if (typeof p === "string" && p) {
+        await this.checkpoints.record(path.resolve(this.opts.cwd, p)).catch(() => {});
       }
     }
 

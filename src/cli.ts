@@ -8,6 +8,7 @@ import { createAgentTool } from "./tools/agent-tool.js";
 import { createQuestionTool, type AskUser } from "./tools/question-tool.js";
 import { createSkillTool } from "./tools/skill-tool.js";
 import { discoverSkills } from "./core/skills.js";
+import { discoverCommands, type CustomCommand } from "./core/commands.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
 import { resolveModel, providersWithKeys } from "./providers/registry.js";
@@ -40,6 +41,7 @@ export interface AgentSetup {
   config: import("./config/config.js").AerinConfig;
   /** Exposed so frontends can toggle plan mode. */
   policy: PermissionPolicy;
+  customCommands: CustomCommand[];
   /** Set when no model could be resolved; the agent holds an inert stub that
    *  makes no requests until the user picks a model with /model. */
   modelUnavailable?: string;
@@ -126,6 +128,7 @@ export async function setupAgent(
 
   const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo);
   const skills = await discoverSkills(cwd);
+  const customCommands = await discoverCommands(cwd);
   const systemPrompt = await buildSystemPrompt(cwd, modelId, skills);
   if (skills.length > 0) tools.push(createSkillTool(skills));
 
@@ -183,6 +186,7 @@ export async function setupAgent(
     cwd,
     config,
     policy,
+    customCommands,
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
   };
 }

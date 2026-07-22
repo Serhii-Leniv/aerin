@@ -7,7 +7,8 @@ import { relativeTime } from "../terminal/format.js";
 import { discoverModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { persistModelChoice } from "../config/config.js";
+import { persistModelChoice, persistProviderKey } from "../config/config.js";
+import { renderCommand } from "../core/commands.js";
 import { expandMentions } from "../core/mentions.js";
 
 interface ReplFlags {
@@ -28,6 +29,8 @@ const HELP = `Commands:
   /model <id>   switch model (any provider/model-id)
   /resume       list previous conversations; /resume <number> to pick one
   /plan         toggle plan mode (read-only exploration, agent presents a plan)
+  /undo         revert the file changes of the last turn
+  /connect <provider> <key>   save a provider API key to the global config
   /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
 
@@ -142,6 +145,21 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         stdout.write(HELP + "\n");
         return undefined;
       }
+      if (line === "/undo") {
+        const restored = await setup.agent.undo();
+        stdout.write(restored.length ? `  reverted ${restored.length} file(s)\n` : "  (nothing to undo)\n");
+        return undefined;
+      }
+      if (line.startsWith("/connect")) {
+        const [, prov, key] = line.split(/\s+/);
+        if (prov && key) {
+          await persistProviderKey(prov, key);
+          stdout.write(`  ${prov} key saved to global config\n`);
+        } else {
+          stdout.write("  usage: /connect <provider> <api-key>\n");
+        }
+        return undefined;
+      }
       if (line === "/plan") {
         const next = !setup.policy.inPlanMode;
         setup.policy.setPlanMode(next);
@@ -210,6 +228,14 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           stdout.write(`  ${err instanceof Error ? err.message : err}\n`);
         }
         return undefined;
+      }
+      if (line.startsWith("/")) {
+        const bare = line.slice(1).split(/\s+/)[0] ?? "";
+        const custom = setup.customCommands.find((c) => c.name === bare);
+        if (custom) {
+          await runTurn(renderCommand(custom, line.slice(bare.length + 1).trim()));
+          return undefined;
+        }
       }
       await runTurn(line);
       return undefined;

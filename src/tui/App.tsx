@@ -3,7 +3,8 @@ import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
-import { persistModelChoice, type AerinConfig } from "../config/config.js";
+import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
+import { renderCommand, type CustomCommand } from "../core/commands.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
 import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
@@ -27,6 +28,7 @@ export interface TuiSetup {
   onPermissionRef: { current: OnPermission };
   onQuestionRef: { current: AskUser };
   policy: PermissionPolicy;
+  customCommands: CustomCommand[];
   resolveModelFn: (id: string) => LanguageModel;
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
@@ -99,6 +101,8 @@ interface PendingPermission {
 const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
   { name: "/plan", description: "toggle plan mode — read-only exploration, agent presents a plan" },
+  { name: "/undo", description: "revert the file changes of the last turn" },
+  { name: "/connect", description: "add a provider API key (pick provider, paste key)" },
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
@@ -170,6 +174,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
   const [helpMenu, setHelpMenu] = useState(false);
+  const [connectPicker, setConnectPicker] = useState(false);
+  const [connectFor, setConnectFor] = useState<string | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [question, setQuestion] = useState<{
     q: string;
@@ -260,10 +266,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   }, []);
 
   const runTurn = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, display?: string) => {
       workingRef.current = true;
       setWorking(true);
-      pushItem("user", prompt);
+      pushItem("user", display ?? prompt);
       // @path tokens attach the named files to the prompt (display stays clean).
       const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
       try {
@@ -428,6 +434,31 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setTodos([]);
           return;
         }
+        case "/undo": {
+          const restored = await setup.agent.undo();
+          const rel = restored.map((p) => (p.startsWith(setup.cwd) ? p.slice(setup.cwd.length + 1) : p));
+          pushItem(
+            "info",
+            restored.length > 0
+              ? `(reverted ${restored.length} file${restored.length === 1 ? "" : "s"}: ${rel.join(", ").slice(0, 120)})`
+              : "(nothing to undo — no file changes recorded this session)",
+          );
+          return;
+        }
+        case "/connect": {
+          const [prov, key] = arg.split(/\s+/);
+          if (prov && key) {
+            await persistProviderKey(prov, key);
+            setup.config.providers = {
+              ...setup.config.providers,
+              [prov]: { ...setup.config.providers?.[prov], apiKey: key },
+            };
+            pushItem("info", `(${prov} key saved — /model to pick a model)`);
+            return;
+          }
+          setConnectPicker(true);
+          return;
+        }
         case "/plan": {
           const next = !setup.policy.inPlanMode;
           setup.policy.setPlanMode(next);
@@ -501,11 +532,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           }
           return;
         }
-        default:
+        default: {
+          const custom = setup.customCommands.find((c) => `/${c.name}` === cmd);
+          if (custom) {
+            void runTurn(renderCommand(custom, arg), `${cmd}${arg ? ` ${arg}` : ""}`);
+            return;
+          }
           pushItem("error", `Unknown command: ${cmd}. Try /help.`);
+        }
       }
     },
-    [setup, pushItem, exit, resumeSession],
+    [setup, pushItem, exit, resumeSession, runTurn],
   );
 
   // A failing command must never take down the TUI (or vanish silently).
@@ -604,7 +641,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question && !helpMenu;
+  const inputActive =
+    !working &&
+    !permission &&
+    !modelPicker &&
+    !sessionPicker &&
+    !question &&
+    !helpMenu &&
+    !connectPicker &&
+    !connectFor;
+
+  const allCommands = [
+    ...SLASH_COMMANDS,
+    ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: c.description })),
+  ];
 
   // Transcript alignment: content flows from the top (Claude Code-style) while
   // it fits; once it outgrows the viewport it bottom-aligns so the newest line
@@ -795,12 +845,58 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
+      {connectPicker && !connectFor ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Text color="cyan">Connect a provider — pick one, then paste its API key</Text>
+          <SelectList
+            active={true}
+            items={[
+              ...Object.entries(PROVIDERS)
+                .filter(([, m]) => m.needsKey)
+                .map(([id, m]) => ({ label: m.name, value: id })),
+              { label: "cancel", value: "__cancel__" },
+            ]}
+            onSelect={(p) => {
+              setConnectPicker(false);
+              if (p !== "__cancel__") setConnectFor(p);
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {connectFor ? (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <LineInput
+            prompt={`${connectFor} API key (Enter empty to cancel): `}
+            active={true}
+            onSubmit={(raw) => {
+              const key = raw.trim();
+              const prov = connectFor;
+              setConnectFor(null);
+              if (!key || !prov) {
+                pushItem("info", "(connect cancelled)");
+                return;
+              }
+              void persistProviderKey(prov, key)
+                .then(() => {
+                  setup.config.providers = {
+                    ...setup.config.providers,
+                    [prov]: { ...setup.config.providers?.[prov], apiKey: key },
+                  };
+                  pushItem("info", `(${prov} key saved — /model to pick a model)`);
+                })
+                .catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
+            }}
+          />
+        </Box>
+      ) : null}
+
       {helpMenu ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
           <Text color="cyan">Commands — ↑/↓ to choose, Enter to run, Esc to close</Text>
           <FilterSelect
             active={true}
-            items={SLASH_COMMANDS.map((c) => ({
+            items={allCommands.map((c) => ({
               label: `${c.name.padEnd(9)} ${c.description}`,
               value: c.name,
             }))}
@@ -860,7 +956,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             active={inputActive}
             onSubmit={onSubmit}
             history={inputHistory}
-            commands={SLASH_COMMANDS}
+            commands={allCommands}
             files={workspaceFiles}
           />
         </Box>

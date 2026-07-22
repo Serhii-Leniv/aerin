@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import type { AerinConfig } from "../config/config.js";
 
@@ -17,8 +18,18 @@ export const PROVIDERS: Record<string, ProviderMeta> = {
   openai: { name: "OpenAI", envVar: "OPENAI_API_KEY", needsKey: true },
   google: { name: "Google", envVar: "GOOGLE_GENERATIVE_AI_API_KEY", needsKey: true },
   openrouter: { name: "OpenRouter", envVar: "OPENROUTER_API_KEY", needsKey: true },
+  xai: { name: "xAI", envVar: "XAI_API_KEY", needsKey: true },
   ollama: { name: "Ollama (local)", envVar: undefined, needsKey: false },
 };
+
+/** Config provider entries that aren't built in but declare a baseURL —
+ *  served through the OpenAI-compatible adapter (DeepSeek, Kimi, Groq,
+ *  LM Studio, vLLM, ...). */
+export function customProviders(config: AerinConfig): string[] {
+  return Object.entries(config.providers ?? {})
+    .filter(([name, p]) => !PROVIDERS[name] && Boolean(p.baseURL))
+    .map(([name]) => name);
+}
 
 export function resolveApiKey(provider: string, config: AerinConfig): string | undefined {
   const meta = PROVIDERS[provider];
@@ -26,9 +37,10 @@ export function resolveApiKey(provider: string, config: AerinConfig): string | u
   return fromEnv ?? config.providers?.[provider]?.apiKey;
 }
 
-/** Key-requiring providers that currently have a usable key. */
+/** Usable providers: built-ins with a key, plus custom baseURL entries. */
 export function providersWithKeys(config: AerinConfig): string[] {
-  return Object.keys(PROVIDERS).filter((p) => PROVIDERS[p]?.needsKey && resolveApiKey(p, config));
+  const builtin = Object.keys(PROVIDERS).filter((p) => PROVIDERS[p]?.needsKey && resolveApiKey(p, config));
+  return [...builtin, ...customProviders(config)];
 }
 
 /**
@@ -66,14 +78,26 @@ export function resolveModel(fullId: string, config: AerinConfig): LanguageModel
       return createGoogleGenerativeAI({ apiKey: requireKey(), ...(baseURL ? { baseURL } : {}) })(modelId);
     case "openrouter":
       return createOpenRouter({ apiKey: requireKey(), ...(baseURL ? { baseURL } : {}) })(modelId);
+    case "xai":
+      return createXai({ apiKey: requireKey(), ...(baseURL ? { baseURL } : {}) })(modelId);
     case "ollama":
       return createOpenAICompatible({
         name: "ollama",
         baseURL: baseURL ?? "http://localhost:11434/v1",
       })(modelId);
     default:
+      // Custom provider: any config entry with a baseURL speaks the OpenAI
+      // protocol via the compatible adapter. Key optional (local servers).
+      if (baseURL) {
+        return createOpenAICompatible({
+          name: provider,
+          baseURL,
+          ...(apiKey ? { apiKey } : {}),
+        })(modelId);
+      }
       throw new Error(
-        `Unknown provider "${provider}". Supported: ${Object.keys(PROVIDERS).join(", ")}`,
+        `Unknown provider "${provider}". Built in: ${Object.keys(PROVIDERS).join(", ")} — or add ` +
+          `a custom OpenAI-compatible one to config: {"providers": {"${provider}": {"baseURL": "https://...", "apiKey": "..."}}}`,
       );
   }
 }
