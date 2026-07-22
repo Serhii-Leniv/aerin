@@ -6,7 +6,7 @@ import type { ModelMessage } from "ai";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { messageText } from "../terminal/format.js";
+import { messageText, setTerminalTitle } from "../terminal/format.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -101,6 +101,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   };
   process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h");
   process.once("exit", leaveAltScreen);
+  setTerminalTitle(`✦ aerin — ${setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin"}`);
 
   try {
     const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
@@ -112,6 +113,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     process.stdin.removeListener("data", onStdinData);
     process.stdin.pause();
     leaveAltScreen();
+    setTerminalTitle(""); // hand the title back to the shell
     // The alt screen took the conversation with it — leave a plain transcript
     // in the normal terminal so the session survives in scrollback.
     printTranscript(setup.agent.history);

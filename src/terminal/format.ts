@@ -10,6 +10,11 @@ export function messageText(m: ModelMessage): string {
     .join("");
 }
 
+/** Set the terminal window/tab title (OSC 0). */
+export function setTerminalTitle(title: string): void {
+  if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${title}\x07`);
+}
+
 /** "just now", "5m ago", "3h ago", "2d ago" — for session lists. */
 export function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
