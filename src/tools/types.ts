@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { AgentEvent } from "../core/events.js";
 
 export type PermissionTier = "read" | "write" | "execute";
 
@@ -7,6 +8,10 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** Set by --allow-outside-cwd; write tools refuse paths outside cwd otherwise. */
   allowOutsideCwd: boolean;
+  /** Long-running tools push mid-execution events here; the agent loop yields them. */
+  onProgress?: (event: AgentEvent) => void;
+  /** Id of the tool call being executed; set by the agent loop. */
+  toolCallId?: string;
 }
 
 export interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {

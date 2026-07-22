@@ -36,6 +36,13 @@ export async function runPrint(flags: PrintFlags, prompt: string): Promise<void>
         case "tool-result":
           if (event.isError) process.stderr.write(`[tool error] ${event.output.slice(0, 200)}\n`);
           break;
+        case "subagent-update":
+          if (event.status !== "running") {
+            process.stderr.write(
+              `[agent ${event.status}] ${event.description} (${event.toolCalls} tools, ${event.inputTokens + event.outputTokens} tok)\n`,
+            );
+          }
+          break;
         case "error":
           process.stderr.write(`error: ${event.message}\n`);
           process.exitCode = 1;

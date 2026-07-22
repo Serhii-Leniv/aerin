@@ -108,6 +108,25 @@ const listers: Record<string, Lister> = {
   },
 };
 
+/**
+ * Fast startup probe: first locally installed Ollama model as "ollama/<name>",
+ * or undefined if Ollama isn't running. Short timeout — this runs on every
+ * keyless startup and must not stall it.
+ */
+export async function detectOllamaModel(config: AerinConfig): Promise<string | undefined> {
+  const baseURL = config.providers?.["ollama"]?.baseURL ?? "http://localhost:11434/v1";
+  const root = baseURL.replace(/\/v1\/?$/, "");
+  try {
+    const res = await fetch(`${root}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { models?: { name: string }[] };
+    const name = data.models?.[0]?.name;
+    return name ? `ollama/${name}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function discoverModels(config: AerinConfig): Promise<DiscoveryResult> {
   const models: DiscoveredModel[] = [];
   const warnings: string[] = [];

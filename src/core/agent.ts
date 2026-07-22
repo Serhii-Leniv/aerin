@@ -50,6 +50,8 @@ export interface AgentOptions {
   allowOutsideCwd: boolean;
   store?: SessionStore;
   initialMessages?: ModelMessage[];
+  /** Tool-iteration cap per send(); sub-agents run with a lower cap. */
+  maxIterations?: number;
 }
 
 export class Agent {
@@ -81,6 +83,16 @@ export class Agent {
 
   get modelId(): string {
     return this.opts.modelId;
+  }
+
+  get model(): LanguageModel {
+    return this.opts.model;
+  }
+
+  /** Register a tool after construction — needed by tools that close over this Agent. */
+  registerTool(def: ToolDef): void {
+    this.opts.tools.push(def);
+    this.toolsByName.set(def.name, def);
   }
 
   async clear(): Promise<void> {
@@ -117,7 +129,9 @@ export class Agent {
     };
 
     try {
-      for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      const maxIterations = this.opts.maxIterations ?? MAX_ITERATIONS;
+      let finished = false;
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
         if (shouldCompact(this.opts.modelId, this.lastInputTokens)) {
           const pre = this.lastInputTokens;
           yield { type: "compaction", preTokens: pre };
@@ -168,7 +182,10 @@ export class Agent {
         if (cost !== undefined) this.totalCostUsd += cost;
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };
 
-        if (toolCalls.length === 0) break;
+        if (toolCalls.length === 0) {
+          finished = true;
+          break;
+        }
 
         const toolResults: ModelMessage = { role: "tool", content: [] };
         for (const call of toolCalls) {
@@ -183,6 +200,12 @@ export class Agent {
         }
         this.messages.push(toolResults);
         newMessages.push(toolResults);
+      }
+      if (!finished) {
+        yield {
+          type: "error",
+          message: `Stopped after ${maxIterations} tool iterations — say "continue" to keep going.`,
+        };
       }
     } catch (err) {
       if (abort.signal.aborted) {
@@ -248,13 +271,60 @@ export class Agent {
       }
     }
 
-    try {
-      const output = await def.execute(input, ctx);
-      return { output, isError: false };
-    } catch (err) {
-      if (ctx.abortSignal?.aborted) throw err;
-      return { output: err instanceof Error ? err.message : String(err), isError: true };
+    // Pump: run execute() while yielding any progress events it pushes (e.g.
+    // sub-agent status), so the UI stays live during long tool runs.
+    const queue: AgentEvent[] = [];
+    let wake: (() => void) | undefined;
+    const progressCtx: ToolContext = {
+      ...ctx,
+      toolCallId: call.toolCallId,
+      onProgress: (e) => {
+        queue.push(e);
+        wake?.();
+      },
+    };
+    let settled = false;
+    let output = "";
+    let error: unknown;
+    void def
+      .execute(input, progressCtx)
+      .then(
+        (r) => {
+          output = r;
+        },
+        (e: unknown) => {
+          error = e ?? new Error("Tool failed.");
+        },
+      )
+      .finally(() => {
+        settled = true;
+        wake?.();
+      });
+
+    while (!settled || queue.length > 0) {
+      if (queue.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        wake = undefined;
+        continue;
+      }
+      const e = queue.shift() as AgentEvent;
+      // Fold sub-agent spend into this agent's totals so every frontend's
+      // meter stays truthful without UI-specific accounting.
+      if (e.type === "subagent-update" && e.status !== "running") {
+        this.totalInputTokens += e.inputTokens;
+        this.totalOutputTokens += e.outputTokens;
+        if (e.costUsd !== undefined) this.totalCostUsd += e.costUsd;
+      }
+      yield e;
     }
+
+    if (error !== undefined) {
+      if (ctx.abortSignal?.aborted) throw error;
+      return { output: error instanceof Error ? error.message : String(error), isError: true };
+    }
+    return { output, isError: false };
   }
 
   /** Add synthetic tool results for any assistant tool calls with no matching result. */

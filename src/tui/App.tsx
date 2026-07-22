@@ -100,6 +100,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [thinking, setThinking] = useState(false);
   const [reasoningTail, setReasoningTail] = useState("");
   const [ctxTokens, setCtxTokens] = useState(0);
+  const [subagents, setSubagents] = useState<
+    Map<string, { description: string; lastTool?: string; toolCalls: number }>
+  >(new Map());
   const reasoningBuf = useRef("");
   const reasoningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -172,6 +175,35 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             case "compaction":
               pushItem("info", `[compacting context — was ${event.preTokens} tokens]`);
               break;
+            case "subagent-update": {
+              if (event.status === "running") {
+                setSubagents((m) =>
+                  new Map(m).set(event.id, {
+                    description: event.description,
+                    ...(event.lastTool !== undefined ? { lastTool: event.lastTool } : {}),
+                    toolCalls: event.toolCalls,
+                  }),
+                );
+              } else {
+                setSubagents((m) => {
+                  const next = new Map(m);
+                  next.delete(event.id);
+                  return next;
+                });
+                const tok = fmtTokens(event.inputTokens + event.outputTokens);
+                pushItem(
+                  event.status === "error" ? "tool-error" : "info",
+                  `  ⎿ agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${tok} tok${event.costUsd ? `, ~$${event.costUsd.toFixed(4)}` : ""})`,
+                );
+                // Sub-agent spend is folded into the agent totals by the core loop.
+                setStats({
+                  inTok: setup.agent.totalInputTokens,
+                  outTok: setup.agent.totalOutputTokens,
+                  cost: setup.agent.totalCostUsd,
+                });
+              }
+              break;
+            }
             case "usage":
               setCtxTokens(event.inputTokens); // context size of the latest request
               setStats({
@@ -194,6 +226,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         setReasoningTail("");
         reasoningBuf.current = "";
         setPermission(null);
+        setSubagents(new Map()); // clear stragglers on abort/error
       }
     },
     [setup, pushItem, flushStream],
@@ -376,6 +409,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color="gray" dimColor>
             {reasoningTail}
           </Text>
+        </Box>
+      ) : null}
+      {subagents.size > 0 ? (
+        <Box flexDirection="column">
+          {[...subagents.entries()].map(([id, s]) => (
+            <Text key={id} color="gray">
+              {"  "}◐ {s.description} — {s.toolCalls} tools · {s.lastTool ?? "starting"}
+            </Text>
+          ))}
         </Box>
       ) : null}
       {working && !permission ? (

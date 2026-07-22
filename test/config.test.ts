@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig, persistProjectRule } from "../src/config/config.js";
+import { fallbackModelId, PROVIDERS } from "../src/providers/registry.js";
 import { truncateOutput, MAX_OUTPUT_LINES } from "../src/tools/types.js";
 
 async function tmpCwd(): Promise<string> {
@@ -28,6 +29,17 @@ describe("config", () => {
     expect(config.permissions?.allow).toContain("bash(git *)");
   });
 
+  test("subagentModel parses and project overrides global", async () => {
+    const cwd = await tmpCwd();
+    await fs.mkdir(path.join(cwd, ".aerin"), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, ".aerin", "settings.json"),
+      JSON.stringify({ subagentModel: "anthropic/claude-haiku-4-5" }),
+    );
+    const { config } = await loadConfig(cwd);
+    expect(config.subagentModel).toBe("anthropic/claude-haiku-4-5");
+  });
+
   test("persistProjectRule appends without duplicates", async () => {
     const cwd = await tmpCwd();
     await persistProjectRule(cwd, "bash(npm *)");
@@ -41,6 +53,43 @@ describe("config", () => {
     await fs.mkdir(path.join(cwd, ".aerin"), { recursive: true });
     await fs.writeFile(path.join(cwd, ".aerin", "settings.json"), "{nope");
     await expect(loadConfig(cwd)).rejects.toThrow(/Failed to parse/);
+  });
+});
+
+describe("fallbackModelId", () => {
+  function withoutProviderEnv<T>(fn: () => T): T {
+    const saved = new Map<string, string | undefined>();
+    for (const meta of Object.values(PROVIDERS)) {
+      if (meta.envVar) {
+        saved.set(meta.envVar, process.env[meta.envVar]);
+        delete process.env[meta.envVar];
+      }
+    }
+    try {
+      return fn();
+    } finally {
+      for (const [k, v] of saved) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  }
+
+  test("returns undefined when no provider has a key", () => {
+    withoutProviderEnv(() => {
+      expect(fallbackModelId({})).toBeUndefined();
+    });
+  });
+
+  test("picks the first provider with a configured key", () => {
+    withoutProviderEnv(() => {
+      expect(fallbackModelId({ providers: { openrouter: { apiKey: "sk-or-x" } } })).toBe(
+        "openrouter/openai/gpt-4o-mini",
+      );
+      expect(
+        fallbackModelId({ providers: { openrouter: { apiKey: "x" }, openai: { apiKey: "y" } } }),
+      ).toBe("openai/gpt-4.1");
+    });
   });
 });
 

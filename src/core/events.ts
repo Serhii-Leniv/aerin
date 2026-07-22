@@ -13,6 +13,21 @@ export type AgentEvent =
   | { type: "tool-result"; id: string; name: string; output: string; isError: boolean }
   | { type: "permission-request"; id: string; name: string; summary: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; costUsd: number | undefined }
+  | {
+      type: "subagent-update";
+      /** toolCallId of the parent `agent` tool call. */
+      id: string;
+      /** Short label from the tool input, e.g. "find permission checks". */
+      description: string;
+      status: "running" | "done" | "error";
+      /** summarize() of the sub-agent's latest tool call. */
+      lastTool?: string;
+      /** Cumulative counts/usage for this sub-agent so far. */
+      toolCalls: number;
+      inputTokens: number;
+      outputTokens: number;
+      costUsd: number | undefined;
+    }
   | { type: "compaction"; preTokens: number }
   | { type: "turn-end" }
   | { type: "error"; message: string };

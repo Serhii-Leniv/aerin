@@ -22,6 +22,8 @@ const providerSchema = z.object({
 
 export const configSchema = z.object({
   model: z.string().optional(),
+  /** Optional cheaper model for the agent (sub-agent) tool, e.g. "anthropic/claude-haiku-4-5". */
+  subagentModel: z.string().optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z.object({ allow: z.array(z.string()).default([]) }).optional(),
@@ -56,6 +58,7 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
 
   const config: AerinConfig = {
     model: projectConfig.model ?? globalConfig.model,
+    subagentModel: projectConfig.subagentModel ?? globalConfig.subagentModel,
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },
     permissions: {

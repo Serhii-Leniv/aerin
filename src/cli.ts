@@ -4,9 +4,12 @@ import { Agent } from "./core/agent.js";
 import type { OnPermission } from "./core/events.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
 import { builtinTools } from "./tools/index.js";
+import { createAgentTool } from "./tools/agent-tool.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
-import { resolveModel } from "./providers/registry.js";
+import { resolveModel, fallbackModelId } from "./providers/registry.js";
+import { detectOllamaModel } from "./providers/list-models.js";
+import { GLOBAL_CONFIG_FILE } from "./config/paths.js";
 import { SessionStore } from "./session/store.js";
 import { startMcpServers, stopMcpServers, type McpConnection } from "./mcp/manager.js";
 import { runPrint } from "./modes/print.js";
@@ -34,16 +37,51 @@ export interface AgentSetup {
   config: import("./config/config.js").AerinConfig;
 }
 
+/** First-run guidance shown when no model provider is usable at all. */
+function onboardingError(cause: unknown): Error {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`no usable model provider found (${reason})
+
+To get started, aerin needs a model. Pick one:
+
+  1. Set a provider API key as an environment variable:
+       ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, or OPENROUTER_API_KEY
+     (an OpenRouter key unlocks models from every lab, including free-tier ones)
+
+  2. Or run a local model — no key needed:
+       install Ollama (https://ollama.com), then e.g.: ollama pull qwen3
+
+Keys can also live in ${GLOBAL_CONFIG_FILE}:
+  { "providers": { "openrouter": { "apiKey": "sk-or-..." } } }
+
+Check your setup with: aerin doctor`);
+}
+
 export async function setupAgent(
   flags: Pick<CliFlags, "model" | "yolo" | "continue" | "resume" | "allowOutsideCwd" | "cwd" | "mcp">,
   onPermission: OnPermission,
 ): Promise<AgentSetup> {
   const cwd = flags.cwd ?? process.cwd();
   const { config } = await loadConfig(cwd);
-  const modelId = flags.model ?? config.model ?? DEFAULT_MODEL;
-  const model = resolveModel(modelId, config);
-
   const warnings: string[] = [];
+
+  let modelId = flags.model ?? config.model ?? DEFAULT_MODEL;
+  let model: import("ai").LanguageModel;
+  try {
+    model = resolveModel(modelId, config);
+  } catch (err) {
+    // An explicitly requested model (-m) fails loud. A configured/default one
+    // falls back to any provider with a key — or a running Ollama — so startup
+    // never dead-ends before the user can /model-switch.
+    if (flags.model) throw err;
+    const fallback = fallbackModelId(config) ?? (await detectOllamaModel(config));
+    if (!fallback || fallback === modelId) throw onboardingError(err);
+    warnings.push(
+      `${modelId} is unavailable (${err instanceof Error ? err.message : err}) — using ${fallback} instead. Use /model to switch.`,
+    );
+    modelId = fallback;
+    model = resolveModel(modelId, config);
+  }
   let mcpConnections: McpConnection[] = [];
   const tools = builtinTools();
   if (flags.mcp && config.mcpServers && Object.keys(config.mcpServers).length > 0) {
@@ -87,6 +125,19 @@ export async function setupAgent(
     store,
     initialMessages,
   });
+
+  // Registered after construction so the tool tracks /model switches via the
+  // live agent. Resolved lazily so a bad subagentModel surfaces as a tool
+  // error, not a startup crash.
+  const subModelId = config.subagentModel;
+  agent.registerTool(
+    createAgentTool({
+      getModel: () => ({ model: agent.model, modelId: agent.modelId }),
+      ...(subModelId
+        ? { getSubagentModel: () => ({ model: resolveModel(subModelId, config), modelId: subModelId }) }
+        : {}),
+    }),
+  );
 
   return { agent, mcpConnections, warnings, modelId, cwd, config };
 }
