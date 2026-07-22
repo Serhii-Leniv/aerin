@@ -3,21 +3,22 @@
  * lineage). Central palette — UI code refers to roles, not raw colors.
  * https://terminal.sexy
  */
+/** Cyberpunk Synthwave — electric pink brand, cyan voice, Dracula accents. */
 export const C = {
-  /** Primary accent: prompts, model name, pickers, logo — aerin's mint-teal. */
-  accent: "#2dd4bf",
-  /** Logo gradient top: sky blue fading into the teal. */
-  accentBright: "#60a5fa",
+  /** Primary accent: prompts, agent responses, model name, pickers. */
+  accent: "#00f2fe", // cyan blue
+  /** Main brand / header art — logo gradient top. */
+  accentBright: "#ff77a9", // electric pink
   /** Secondary/meta text. */
-  dim: "#707880",
+  dim: "#6272a4", // muted purple-gray
   /** Success / done. */
-  ok: "#b5bd68",
-  /** Warnings, in-progress, queued — warm amber, the teal's counterpart. */
-  warn: "#f0c674",
+  ok: "#50fa7b", // neon green
+  /** Warnings, in-progress, queued. */
+  warn: "#f1fa8c", // neon yellow
   /** Errors and destructive hints. */
-  error: "#cc6666",
+  error: "#ff5555", // hot red
   /** Plan mode, section headers. */
-  magenta: "#b294bb",
+  magenta: "#bd93f9", // synth purple
   /** Default foreground (rarely set explicitly — terminal fg is close). */
-  fg: "#c5c8c6",
+  fg: "#f8f8f2",
 } as const;
