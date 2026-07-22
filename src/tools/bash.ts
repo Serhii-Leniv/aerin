@@ -70,16 +70,26 @@ export function detectShell(): ShellInfo {
 export const bashTool: ToolDef<z.ZodTypeAny> = {
   name: "bash",
   description:
-    "Run a shell command and return combined stdout+stderr with the exit code. The active shell is described in the system prompt.",
+    "Run a shell command and return combined stdout+stderr with the exit code. The active shell is " +
+    "described in the system prompt. For long-running processes (dev servers, watchers), set " +
+    "background:true — it returns a job id immediately; read output later with bash_output.",
   permission: "execute",
   inputSchema: z.object({
     command: z.string().describe("The command to run"),
     timeout_ms: z.number().int().min(1000).max(MAX_TIMEOUT_MS).optional()
       .describe("Timeout in milliseconds (default 120000)"),
     cwd: z.string().optional().describe("Working directory override"),
+    background: z.boolean().optional()
+      .describe("Run detached and return a job id immediately (for servers/watchers)"),
   }),
-  summarize: (i) => `Bash(${i.command.length > 80 ? i.command.slice(0, 77) + "..." : i.command})`,
+  summarize: (i) =>
+    `Bash(${i.command.length > 80 ? i.command.slice(0, 77) + "..." : i.command}${i.background ? " &" : ""})`,
   async execute(input, ctx) {
+    if (input.background) {
+      const { startJob } = await import("./bash-jobs.js");
+      const job = startJob(input.command, input.cwd ?? ctx.cwd);
+      return `Started background job ${job.id}: ${input.command}\nRead its output with bash_output (job: "${job.id}").`;
+    }
     const shell = detectShell();
     const timeout = Math.min(input.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
 

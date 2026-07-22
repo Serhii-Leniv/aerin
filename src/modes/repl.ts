@@ -102,6 +102,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
             break;
           case "usage":
             break;
+          case "retry":
+            stdout.write(`  [retrying after provider error, attempt ${event.attempt + 1}/${event.maxAttempts}]\n`);
+            break;
           case "todo-update":
             for (const t of event.items) {
               stdout.write(`  ${t.status === "done" ? "[x]" : t.status === "active" ? "[>]" : "[ ]"} ${t.text}\n`);

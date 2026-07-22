@@ -1,4 +1,4 @@
-import { streamText, tool as aiTool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import { APICallError, streamText, tool as aiTool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import type { AgentEvent, OnPermission } from "./events.js";
 import type { ToolDef, ToolContext } from "../tools/types.js";
 import { PermissionPolicy, targetFor } from "../permissions/policy.js";
@@ -8,6 +8,22 @@ import { shouldCompact, compact } from "./compact.js";
 import type { SessionStore } from "../session/store.js";
 
 const MAX_ITERATIONS = 50;
+/** Extra whole-request retries when the stream fails before producing content. */
+const MAX_STREAM_RETRIES = 2;
+
+/** Transient provider failures worth retrying: rate limits, overload, network. */
+export function isRetryableError(err: unknown): boolean {
+  if (APICallError.isInstance(err)) {
+    if (err.isRetryable) return true;
+    const sc = err.statusCode;
+    if (sc !== undefined && [408, 409, 429, 500, 502, 503, 529].includes(sc)) return true;
+  }
+  const msg = errorMessage(err).toLowerCase();
+  if (/overloaded|rate.?limit|too many requests|timed? ?out|econnreset|econnrefused|fetch failed|socket|network error/.test(msg)) {
+    return true;
+  }
+  return /\b(429|500|502|503|529)\b/.test(msg);
+}
 
 /**
  * Strip non-JSON values (undefined properties, class instances) from
@@ -119,6 +135,24 @@ export class Agent {
     return Math.round(JSON.stringify(this.messages).length / 4);
   }
 
+  /**
+   * Request messages with the system prompt inlined. On Anthropic models,
+   * cache breakpoints go on the system prompt and the latest message so the
+   * unchanged prefix is billed at the cached rate (~10%) on every iteration.
+   * Clones — never mutates — stored history, so the moving breakpoint is not
+   * persisted to the session file.
+   */
+  private requestMessages(): ModelMessage[] {
+    const system = { role: "system", content: this.opts.systemPrompt } as ModelMessage;
+    if (!this.opts.modelId.startsWith("anthropic/")) return [system, ...this.messages];
+    const cacheOpts = { anthropic: { cacheControl: { type: "ephemeral" } } };
+    const withCache = (m: ModelMessage): ModelMessage =>
+      ({ ...m, providerOptions: { ...(m as { providerOptions?: object }).providerOptions, ...cacheOpts } }) as ModelMessage;
+    const last = this.messages[this.messages.length - 1];
+    if (!last) return [withCache(system)];
+    return [withCache(system), ...this.messages.slice(0, -1), withCache(last)];
+  }
+
   /** Declare tool schemas only — never `execute` — so the permission gate interposes. */
   private buildToolSet(): ToolSet {
     const set: ToolSet = {};
@@ -154,30 +188,64 @@ export class Agent {
           this.lastInputTokens = 0;
         }
 
-        const result = streamText({
-          model: this.opts.model,
-          system: this.opts.systemPrompt,
-          messages: this.messages,
-          tools: this.buildToolSet(),
-          abortSignal: abort.signal,
-          // Errors surface through our event stream; without this the SDK
-          // also dumps the raw error object to the console.
-          onError: () => {},
-        });
-
         const toolCalls: { toolCallId: string; toolName: string; input: unknown }[] = [];
         let sawText = false;
+        let result!: ReturnType<typeof streamText>;
 
-        for await (const part of result.fullStream) {
-          if (part.type === "text-delta") {
-            sawText = true;
-            yield { type: "text-delta", text: part.text };
-          } else if (part.type === "reasoning-delta") {
-            yield { type: "reasoning-delta", text: part.text };
-          } else if (part.type === "tool-call") {
-            toolCalls.push({ toolCallId: part.toolCallId, toolName: part.toolName, input: part.input });
-          } else if (part.type === "error") {
-            throw part.error instanceof Error ? part.error : new Error(errorMessage(part.error));
+        // Retry the whole request when the stream dies on a transient provider
+        // error BEFORE any content arrived; once content streamed, fail honestly.
+        for (let attempt = 0; ; attempt++) {
+          result = streamText({
+            model: this.opts.model,
+            messages: this.requestMessages(),
+            tools: this.buildToolSet(),
+            abortSignal: abort.signal,
+            // Errors surface through our event stream; without this the SDK
+            // also dumps the raw error object to the console.
+            onError: () => {},
+          });
+
+          let received = false;
+          try {
+            for await (const part of result.fullStream) {
+              if (part.type === "text-delta") {
+                received = true;
+                sawText = true;
+                yield { type: "text-delta", text: part.text };
+              } else if (part.type === "reasoning-delta") {
+                received = true;
+                yield { type: "reasoning-delta", text: part.text };
+              } else if (part.type === "tool-call") {
+                received = true;
+                toolCalls.push({ toolCallId: part.toolCallId, toolName: part.toolName, input: part.input });
+              } else if (part.type === "error") {
+                throw part.error instanceof Error ? part.error : new Error(errorMessage(part.error));
+              }
+            }
+            break;
+          } catch (err) {
+            if (received || attempt >= MAX_STREAM_RETRIES || abort.signal.aborted || !isRetryableError(err)) {
+              throw err;
+            }
+            toolCalls.length = 0;
+            yield {
+              type: "retry",
+              attempt: attempt + 1,
+              maxAttempts: MAX_STREAM_RETRIES + 1,
+              message: errorMessage(err),
+            };
+            const delay = 1500 * (attempt + 1);
+            await new Promise<void>((resolve) => {
+              const t = setTimeout(resolve, delay);
+              abort.signal.addEventListener(
+                "abort",
+                () => {
+                  clearTimeout(t);
+                  resolve();
+                },
+                { once: true },
+              );
+            });
           }
         }
         if (sawText) yield { type: "message-end" };
@@ -188,7 +256,9 @@ export class Agent {
         newMessages.push(...sanitized);
 
         const usage = await result.usage;
-        const inTok = usage.inputTokens ?? 0;
+        // Cached input is excluded from inputTokens but still occupies context —
+        // count it so the meter reflects the true conversation size.
+        const inTok = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0);
         const outTok = usage.outputTokens ?? 0;
         this.lastInputTokens = inTok;
         this.totalInputTokens += inTok;

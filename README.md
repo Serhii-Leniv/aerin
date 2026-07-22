@@ -5,13 +5,18 @@
 
 An open-source CLI coding agent — in the spirit of Claude Code and opencode, small enough to read in an afternoon.
 
-- **Any model, any provider**: Anthropic, OpenAI, Google, OpenRouter (300+ models), and local Ollama via the [Vercel AI SDK](https://ai-sdk.dev). Bring your own API key. `/model` shows a live, filterable list of what your keys can actually access — nothing is hardcoded.
-- **Real coding tools**: read / write / edit files (CRLF-safe), glob, grep (ripgrep-accelerated), and a shell tool with a proper Windows strategy.
+- **Any model, any provider**: Anthropic, OpenAI, Google, OpenRouter (300+ models), and local Ollama via the [Vercel AI SDK](https://ai-sdk.dev). Bring your own API key. `/model` shows a live, filterable list of what your keys can actually access — nothing is hardcoded. Aerin never auto-selects a paid model on your behalf.
+- **Real coding tools**: read / write / edit files (CRLF-safe), glob, grep (ripgrep-accelerated), a shell tool with a proper Windows strategy — plus background jobs (`background:true` + `bash_output`) for dev servers and watchers.
+- **Sub-agents**: the `agent` tool delegates research to a read-only sub-agent with its own context window — it explores (and can search the web) and returns only a report, so file dumps never flood your conversation. Live status line, cost folded into the meter, optional cheaper `subagentModel`.
+- **Web access**: keyless `websearch` (DuckDuckGo) and `webfetch` (pages as readable text) for both the main agent and sub-agents.
+- **Plan mode**: `/plan` makes the agent read-only — it explores, presents a numbered plan, and nothing is written or executed until you toggle back.
+- **Task list & clarifying questions**: the model keeps a live todo checklist in the TUI, and can ask you one multiple-choice question when it is genuinely blocked.
+- **Auto-memory**: durable project facts are saved to `AGENTS.md` (`## Memory`) with your approval and loaded into every future session; `AGENTS.md` / `CLAUDE.md` instructions are injected into the system prompt.
 - **Permission gate**: every write and command asks first, with colored diff previews. Approve once, or persist an allow-rule per project.
-- **Sessions**: JSONL history per directory — `--continue`, `--resume <id>`, `/sessions` — with automatic context compaction.
+- **Sessions**: JSONL history per directory with human titles — `--continue`, `--resume <id>`, or `/resume` for a filterable picker that replays the conversation — plus automatic context compaction and a live context/cost meter.
+- **Reliability**: transient provider errors (429/overload/network) retry automatically with backoff; Anthropic prompt caching cuts input cost on every agentic iteration.
 - **MCP client**: paste your existing `mcpServers` config (stdio and HTTP servers) and their tools appear in the agent.
-- **Terminal UI**: Ink-based TUI with streaming, markdown rendering, tool cards, input history, and a status bar — plus `--no-tui` (plain REPL) and `-p` (headless one-shot) modes.
-- **AGENTS.md aware**: project instructions from `AGENTS.md` / `CLAUDE.md` files are injected into the system prompt.
+- **Terminal UI**: Ink-based TUI with Claude Code-style transcript (`⏺ Read(file)` / `⎿ 82 lines`), streamed markdown, input history, slash-command autocomplete, and a status bar — plus `--no-tui` (plain REPL) and `-p` (headless one-shot) modes.
 
 ## Install
 
@@ -49,6 +54,7 @@ Global: `~/.config/aerin/config.json` (platform-appropriate). Per-project: `.aer
 ```json
 {
   "model": "anthropic/claude-opus-4-8",
+  "subagentModel": "anthropic/claude-haiku-4-5",
   "providers": {
     "openrouter": { "apiKey": "sk-or-..." },
     "ollama": { "baseURL": "http://localhost:11434/v1" }

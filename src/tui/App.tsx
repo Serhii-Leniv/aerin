@@ -227,6 +227,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             case "todo-update":
               setTodos(event.items);
               break;
+            case "retry":
+              pushItem(
+                "info",
+                `(provider error — retrying, attempt ${event.attempt + 1}/${event.maxAttempts}: ${event.message.slice(0, 80)})`,
+              );
+              break;
             case "subagent-update": {
               if (event.status === "running") {
                 setSubagents((m) =>

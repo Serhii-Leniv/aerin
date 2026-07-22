@@ -2,6 +2,7 @@ import type { ToolDef } from "./types.js";
 import { readTool, writeTool, editTool, lsTool } from "./fs-tools.js";
 import { globTool, grepTool } from "./search-tools.js";
 import { bashTool } from "./bash.js";
+import { bashOutputTool } from "./bash-jobs.js";
 import { webFetchTool, webSearchTool } from "./web-tools.js";
 import { todoTool } from "./todo-tool.js";
 import { memoryTool } from "./memory-tool.js";
@@ -15,6 +16,7 @@ export function builtinTools(): ToolDef[] {
     globTool,
     grepTool,
     bashTool,
+    bashOutputTool,
     webSearchTool,
     webFetchTool,
     todoTool,

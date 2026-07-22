@@ -31,6 +31,7 @@ export type AgentEvent =
   | { type: "compaction"; preTokens: number }
   | { type: "todo-update"; items: { text: string; status: "pending" | "active" | "done" }[] }
   | { type: "turn-end" }
+  | { type: "retry"; attempt: number; maxAttempts: number; message: string }
   | { type: "error"; message: string };
 
 export type PermissionDecision =
