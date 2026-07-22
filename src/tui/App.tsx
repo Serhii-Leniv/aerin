@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Static, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -137,7 +137,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // spacer below the transcript shrinks as this grows, keeping the input
   // pinned to the bottom edge until the window fills — after which the
   // terminal scrolls naturally and the input stays at the bottom anyway.
-  const usedRows = useRef(10 + setup.warnings.length);
+  const usedRows = useRef(
+    9 + setup.warnings.reduce((n, w) => n + countRows(`warning: ${w}`, stdout?.columns ?? 80), 0),
+  );
 
   const [items, setItems] = useState<TranscriptItem[]>(() => [
     { key: 0, kind: "banner", text: "" },
@@ -373,7 +375,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
           setCtxTokens(0);
           setTodos([]);
-          usedRows.current = 10; // fresh banner only — input drops back to the bottom
+          usedRows.current = 9; // fresh banner only — input drops back to the bottom
           return;
         }
         case "/plan": {
@@ -544,22 +546,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const inputActive = !working && !permission && !modelPicker && !sessionPicker && !question;
 
-  // Spacer between transcript and the dynamic bottom section: keeps the input
-  // pinned to the bottom edge while the window is not yet full.
-  const columns = stdout?.columns ?? 80;
-  const dynamicRows =
-    (streaming ? countRows(streaming, columns) : 0) +
-    (thinking && reasoningTail ? countRows(reasoningTail, columns) + 1 : 0) +
-    subagents.size +
-    (todos.length > 0 ? todos.length + 2 : 0) +
-    (working && !permission && !question ? 1 : 0) +
-    (permission ? 14 : 0) +
-    (question ? question.options.length + 5 : 0) +
-    (modelPicker ? 18 : 0) +
-    (sessionPicker ? Math.min(sessionPicker.length, 14) + 3 : 0) +
-    (inputActive ? 3 : 0) +
-    1; // status bar
-  const spacerRows = Math.max(0, (stdout?.rows ?? 24) - usedRows.current - dynamicRows);
+  // Keep the input pinned to the bottom edge: measure the two dynamic regions
+  // for real (no guessing — suggestion lists, dialogs, and wrapping all count)
+  // and size the spacer so transcript + spacer + dynamics fill the window.
+  // Once the transcript alone exceeds the window, the spacer is 0 and natural
+  // terminal scrolling keeps the input at the bottom.
+  const midRef = useRef<DOMElement | null>(null);
+  const bottomRef = useRef<DOMElement | null>(null);
+  const [measured, setMeasured] = useState({ mid: 0, bottom: 4 });
+  useEffect(() => {
+    const mid = midRef.current ? measureElement(midRef.current).height : 0;
+    const bottom = bottomRef.current ? measureElement(bottomRef.current).height : 0;
+    setMeasured((prev) => (prev.mid === mid && prev.bottom === bottom ? prev : { mid, bottom }));
+  });
+  const spacerRows = Math.max(0, (stdout?.rows ?? 24) - usedRows.current - measured.mid - measured.bottom);
 
   return (
     <Box flexDirection="column">
@@ -613,8 +613,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
       </Static>
 
-      {spacerRows > 0 ? <Box height={spacerRows} /> : null}
-
+      {/* Streamed content flows directly under the transcript so a finished
+          message lands exactly where it streamed — no jump. */}
+      <Box ref={midRef} flexDirection="column">
       {streaming ? <Text>{streaming}</Text> : null}
       {thinking && reasoningTail ? (
         <Box flexDirection="column" marginBottom={0}>
@@ -644,7 +645,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {working && !permission && !question ? (
         <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
       ) : null}
+      </Box>
 
+      {spacerRows > 0 ? <Box height={spacerRows} /> : null}
+
+      <Box ref={bottomRef} flexDirection="column">
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
           <Text color="yellow">Permission: {permission.req.summary}</Text>
@@ -783,6 +788,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {planMode ? " · PLAN (read-only)" : ""}
           {exitArmed ? " · press Ctrl+C again to exit" : ""}
         </Text>
+      </Box>
       </Box>
     </Box>
   );
