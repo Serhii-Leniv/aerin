@@ -7,8 +7,8 @@ import { persistModelChoice, persistProviderKey, type AerinConfig } from "../con
 import { renderCommand, type CustomCommand } from "../core/commands.js";
 import { MODEL_TABLE, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
-import { PROVIDER_CATALOG, catalogEntry } from "../providers/catalog.js";
-import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
+import { PROVIDER_CATALOG, catalogEntry, keyLooksLike } from "../providers/catalog.js";
+import { discoverModels, formatModelLabel, listProviderModels, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
 import type { AskUser } from "../tools/question-tool.js";
@@ -456,23 +456,50 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   }, [setup, pushItem]);
 
   const saveConnection = useCallback(
-    (id: string, key: string, baseURL?: string) => {
-      void persistProviderKey(id, key, baseURL)
-        .then(() => {
-          setup.config.providers = {
-            ...setup.config.providers,
-            [id]: {
-              ...setup.config.providers?.[id],
-              ...(key ? { apiKey: key } : {}),
-              ...(baseURL ? { baseURL } : {}),
-            },
-          };
-          pushItem("info", `(${id} connected — loading its models…)`);
-          void openModelPicker().catch((err) =>
-            pushItem("error", err instanceof Error ? err.message : String(err)),
+    async (id: string, key: string, baseURL?: string): Promise<void> => {
+      // A key whose format belongs to another provider is refused outright.
+      const looks = key ? keyLooksLike(key) : undefined;
+      if (looks && looks !== id) {
+        pushItem(
+          "error",
+          `✗ that looks like a ${looks} key (${key.slice(0, 7)}…), not a ${id} key — nothing saved. Run /connect ${looks} instead.`,
+        );
+        return;
+      }
+      try {
+        await persistProviderKey(id, key, baseURL);
+        setup.config.providers = {
+          ...setup.config.providers,
+          [id]: {
+            ...setup.config.providers?.[id],
+            ...(key ? { apiKey: key } : {}),
+            ...(baseURL ? { baseURL } : {}),
+          },
+        };
+      } catch (err) {
+        pushItem("error", err instanceof Error ? err.message : String(err));
+        return;
+      }
+      // Validate the key RIGHT NOW — a wrong key must be loud, not a mystery later.
+      pushItem("info", `(checking the ${id} key…)`);
+      try {
+        const models = await listProviderModels(id, setup.config);
+        if (!models || models.length === 0) {
+          pushItem(
+            "error",
+            `✗ ${id}: the key was saved but the provider returned no models — it may be the wrong provider's key. Re-run /connect ${id} with the right one.`,
           );
-        })
-        .catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
+          return;
+        }
+        pushItem("info", `✓ ${id} key works — ${models.length} models available`);
+        await openModelPicker();
+      } catch (err) {
+        pushItem(
+          "error",
+          `✗ ${id} REJECTED the key (${err instanceof Error ? err.message : err}). ` +
+            `Did you paste a different provider's key? The key is saved but unusable — re-run /connect ${id}.`,
+        );
+      }
     },
     [setup, pushItem, openModelPicker],
   );
@@ -506,7 +533,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         case "/connect": {
           const [prov, key] = arg.split(/\s+/);
           if (prov && key) {
-            saveConnection(prov, key, catalogEntry(prov)?.baseURL);
+            await saveConnection(prov, key, catalogEntry(prov)?.baseURL);
             return;
           }
           setConnect({ step: "pick" });
@@ -902,7 +929,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               if (!entry) return setConnect(null);
               if (!entry.needsKey) {
                 setConnect(null);
-                saveConnection(entry.id, "", entry.baseURL);
+                void saveConnection(entry.id, "", entry.baseURL);
                 return;
               }
               setConnect({
@@ -926,7 +953,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               const { id, baseURL } = connect;
               setConnect(null);
               if (!key) return pushItem("info", "(connect cancelled)");
-              saveConnection(id, key, baseURL);
+              void saveConnection(id, key, baseURL);
             }}
           />
         </Box>
@@ -975,7 +1002,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             onSubmit={(raw) => {
               const { id, baseURL } = connect;
               setConnect(null);
-              saveConnection(id, raw.trim(), baseURL);
+              void saveConnection(id, raw.trim(), baseURL);
             }}
           />
         </Box>

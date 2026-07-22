@@ -4,12 +4,12 @@ import { setupAgent, stopMcpServers } from "../cli.js";
 import type { PermissionDecision, PermissionRequest } from "../core/events.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
 import { relativeTime } from "../terminal/format.js";
-import { discoverModels } from "../providers/list-models.js";
+import { discoverModels, listProviderModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
 import { persistModelChoice, persistProviderKey } from "../config/config.js";
 import { renderCommand } from "../core/commands.js";
-import { catalogEntry } from "../providers/catalog.js";
+import { catalogEntry, keyLooksLike } from "../providers/catalog.js";
 import { expandMentions } from "../core/mentions.js";
 
 interface ReplFlags {
@@ -154,8 +154,26 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       if (line.startsWith("/connect")) {
         const [, prov, key, url] = line.split(/\s+/);
         if (prov && key) {
+          const looks = keyLooksLike(key);
+          if (looks && looks !== prov) {
+            stdout.write(`  ✗ that looks like a ${looks} key, not ${prov} — nothing saved. Use /connect ${looks}\n`);
+            return undefined;
+          }
           await persistProviderKey(prov, key, url ?? catalogEntry(prov)?.baseURL);
-          stdout.write(`  ${prov} saved to global config\n`);
+          setup.config.providers = {
+            ...setup.config.providers,
+            [prov]: { ...setup.config.providers?.[prov], apiKey: key },
+          };
+          try {
+            const models = await listProviderModels(prov, setup.config);
+            stdout.write(
+              models && models.length > 0
+                ? `  ✓ ${prov} key works — ${models.length} models available\n`
+                : `  ✗ ${prov}: key saved but no models returned — wrong provider's key?\n`,
+            );
+          } catch (err) {
+            stdout.write(`  ✗ ${prov} REJECTED the key (${err instanceof Error ? err.message : err})\n`);
+          }
         } else {
           stdout.write("  usage: /connect <provider> <api-key> [baseURL]\n");
         }

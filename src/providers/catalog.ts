@@ -34,3 +34,18 @@ export const PROVIDER_CATALOG: CatalogEntry[] = [
 export function catalogEntry(id: string): CatalogEntry | undefined {
   return PROVIDER_CATALOG.find((e) => e.id === id);
 }
+
+/** Distinctive API-key prefixes — used to catch keys pasted into the wrong provider. */
+const KEY_PREFIXES: [prefix: string, provider: string][] = [
+  ["sk-ant-", "anthropic"],
+  ["sk-or-", "openrouter"],
+  ["gsk_", "groq"],
+  ["xai-", "xai"],
+  ["AIza", "google"],
+  ["csk-", "cerebras"],
+];
+
+/** Which provider a key's format belongs to, when the prefix is unambiguous. */
+export function keyLooksLike(key: string): string | undefined {
+  return KEY_PREFIXES.find(([prefix]) => key.startsWith(prefix))?.[1];
+}

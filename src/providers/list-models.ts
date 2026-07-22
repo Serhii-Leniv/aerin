@@ -139,6 +139,34 @@ export async function detectOllamaModel(config: AerinConfig): Promise<string | u
   }
 }
 
+function customListerFor(name: string): Lister {
+  return async (cfg) => {
+    const baseURL = cfg.providers?.[name]?.baseURL;
+    if (!baseURL) return undefined;
+    const key = cfg.providers?.[name]?.apiKey;
+    const data = (await fetchJson(
+      `${baseURL.replace(/\/$/, "")}/models`,
+      key ? { Authorization: `Bearer ${key}` } : {},
+    )) as { data?: { id: string }[] };
+    return (data.data ?? []).map((m) => ({ id: m.id }));
+  };
+}
+
+/**
+ * Query ONE provider's model list — used to validate a freshly pasted key.
+ * Throws on HTTP errors (e.g. 401 for a wrong key); resolves undefined when
+ * the provider has no key/baseURL configured.
+ */
+export async function listProviderModels(
+  provider: string,
+  config: AerinConfig,
+): Promise<{ id: string }[] | undefined> {
+  const lister =
+    listers[provider] ?? (config.providers?.[provider]?.baseURL ? customListerFor(provider) : undefined);
+  if (!lister) return undefined;
+  return (await lister(config)) ?? undefined;
+}
+
 export async function discoverModels(config: AerinConfig): Promise<DiscoveryResult> {
   const models: DiscoveredModel[] = [];
   const warnings: string[] = [];
@@ -146,16 +174,7 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
   // Custom OpenAI-compatible providers: query <baseURL>/models like OpenAI.
   const customListers: Record<string, Lister> = {};
   for (const name of customProviders(config)) {
-    customListers[name] = async (cfg) => {
-      const baseURL = cfg.providers?.[name]?.baseURL;
-      if (!baseURL) return undefined;
-      const key = cfg.providers?.[name]?.apiKey;
-      const data = (await fetchJson(
-        `${baseURL.replace(/\/$/, "")}/models`,
-        key ? { Authorization: `Bearer ${key}` } : {},
-      )) as { data?: { id: string }[] };
-      return (data.data ?? []).map((m) => ({ id: m.id }));
-    };
+    customListers[name] = customListerFor(name);
   }
 
   await Promise.all(

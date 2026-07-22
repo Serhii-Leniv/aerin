@@ -108,6 +108,17 @@ describe("provider catalog", () => {
   });
 });
 
+describe("keyLooksLike", () => {
+  test("identifies distinctive key formats", async () => {
+    const { keyLooksLike } = await import("../src/providers/catalog.js");
+    expect(keyLooksLike("gsk_abc123")).toBe("groq");
+    expect(keyLooksLike("sk-ant-api03-xyz")).toBe("anthropic");
+    expect(keyLooksLike("sk-or-v1-xyz")).toBe("openrouter");
+    expect(keyLooksLike("xai-abc")).toBe("xai");
+    expect(keyLooksLike("sk-proj-generic")).toBeUndefined(); // ambiguous — no guess
+  });
+});
+
 describe("persistProviderKey", () => {
   test("writes and merges provider entries", async () => {
     const file = path.join(await tmpCwd(), "config.json");
