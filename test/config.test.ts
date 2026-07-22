@@ -49,10 +49,13 @@ describe("truncateOutput", () => {
     expect(truncateOutput("hello")).toBe("hello");
   });
 
-  test("caps line count", () => {
-    const big = Array.from({ length: MAX_OUTPUT_LINES + 500 }, (_, i) => `line${i}`).join("\n");
+  test("caps line count keeping head and tail", () => {
+    const total = MAX_OUTPUT_LINES + 500;
+    const big = Array.from({ length: total }, (_, i) => `line${i}`).join("\n");
     const out = truncateOutput(big);
-    expect(out).toContain("[output truncated");
+    expect(out).toContain("output truncated");
     expect(out.split("\n").length).toBeLessThan(MAX_OUTPUT_LINES + 10);
+    expect(out).toContain("line0");
+    expect(out).toContain(`line${total - 1}`); // tail preserved — errors live there
   });
 });

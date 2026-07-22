@@ -8,7 +8,7 @@ import { MODEL_TABLE } from "../providers/models.js";
 import { discoverModels } from "../providers/list-models.js";
 import { SessionStore } from "../session/store.js";
 import { renderMarkdown } from "./markdown.js";
-import { FilterSelect, LineInput, SelectList } from "./components/widgets.js";
+import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
 export interface TuiSetup {
@@ -61,6 +61,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
 
   const nextKey = useRef(100);
   const streamBuf = useRef("");
@@ -110,9 +111,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             case "tool-call":
               pushItem("tool", `⏺ ${event.summary}`);
               break;
-            case "tool-result":
-              if (event.isError) pushItem("tool-error", `  ✗ ${event.output.split("\n")[0] ?? ""}`);
+            case "tool-result": {
+              const first = (event.output.split("\n")[0] ?? "").slice(0, 100);
+              pushItem(event.isError ? "tool-error" : "info", `  ⎿ ${event.isError ? "✗ " : ""}${first}`);
               break;
+            }
             case "compaction":
               pushItem("info", `[compacting context — was ${event.preTokens} tokens]`);
               break;
@@ -211,6 +214,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     (value: string) => {
       const line = value.trim();
       if (!line || workingRef.current) return;
+      setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (line.startsWith("/")) {
         void handleCommand(line);
       } else {
@@ -272,14 +276,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       </Static>
 
       {streaming ? <Text>{streaming}</Text> : null}
-      {working && !streaming && !permission ? <Text color="gray">… working (Esc to interrupt)</Text> : null}
+      {working && !permission ? <Spinner label="working — Esc to interrupt" /> : null}
 
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
           <Text color="yellow">Permission: {permission.req.summary}</Text>
-          {permission.req.preview ? (
-            <Text color="gray">{permission.req.preview.split("\n").slice(0, 25).join("\n")}</Text>
-          ) : null}
+          {permission.req.preview ? <DiffText diff={permission.req.preview} maxLines={25} /> : null}
           <SelectList
             active={true}
             items={[
@@ -335,7 +337,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
-      {inputActive ? <LineInput prompt="> " active={inputActive} onSubmit={onSubmit} /> : null}
+      {inputActive ? (
+        <LineInput prompt="> " active={inputActive} onSubmit={onSubmit} history={inputHistory} />
+      ) : null}
 
       <Box>
         <Text color="gray">

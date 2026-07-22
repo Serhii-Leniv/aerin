@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "dev": "bun run src/index.ts",
@@ -22,7 +23,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bohdan-stampli/aerin.git"
+    "url": "git+https://github.com/Serhii-Leniv/aerin-agent.git"
+  },
+  "homepage": "https://github.com/Serhii-Leniv/aerin-agent#readme",
+  "bugs": {
+    "url": "https://github.com/Serhii-Leniv/aerin-agent/issues"
   },
   "keywords": [
     "ai",

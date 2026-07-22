@@ -24,21 +24,34 @@ export interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {
 export const MAX_OUTPUT_CHARS = 30_000;
 export const MAX_OUTPUT_LINES = 2_000;
 
-/** Cap tool output so a single result can't blow up the context window. */
+/**
+ * Cap tool output so a single result can't blow up the context window.
+ * Keeps the head AND the tail — errors and summaries usually live at the
+ * end of command output, so pure head-truncation hides exactly what the
+ * model needs to see.
+ */
 export function truncateOutput(text: string): string {
+  const lines = text.split("\n");
   let out = text;
-  let truncated = false;
-  const lines = out.split("\n");
+
   if (lines.length > MAX_OUTPUT_LINES) {
-    out = lines.slice(0, MAX_OUTPUT_LINES).join("\n");
-    truncated = true;
+    const headLines = Math.floor(MAX_OUTPUT_LINES * 0.75);
+    const tailLines = MAX_OUTPUT_LINES - headLines;
+    out = [
+      ...lines.slice(0, headLines),
+      `[... output truncated: ${lines.length - MAX_OUTPUT_LINES} lines omitted ...]`,
+      ...lines.slice(-tailLines),
+    ].join("\n");
   }
+
   if (out.length > MAX_OUTPUT_CHARS) {
-    out = out.slice(0, MAX_OUTPUT_CHARS);
-    truncated = true;
+    const headChars = Math.floor(MAX_OUTPUT_CHARS * 0.7);
+    const tailChars = MAX_OUTPUT_CHARS - headChars;
+    out =
+      out.slice(0, headChars) +
+      `\n[... output truncated: ${out.length - MAX_OUTPUT_CHARS} chars omitted ...]\n` +
+      out.slice(-tailChars);
   }
-  if (truncated) {
-    out += `\n[output truncated — original was ${text.length} chars / ${lines.length} lines]`;
-  }
+
   return out;
 }
