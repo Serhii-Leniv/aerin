@@ -1171,7 +1171,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.dim}>
             {" · "}
             {fmtTokens(stats.inTok)}↑ {fmtTokens(stats.outTok)}↓
-            {stats.cost > 0 ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}` : ""}
+            {stats.cost > 0
+              ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
+              : ""}
           </Text>
           {planMode ? <Text color={C.magenta}> · PLAN</Text> : null}
           {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}

@@ -131,7 +131,7 @@ describe("tool progress pump", () => {
     expect(results.every((r) => !r.isError)).toBe(true);
   });
 
-  test("missing usage (local models) falls back to estimates; free-tier providers show no cost", async () => {
+  test("missing usage (local models) falls back to estimates", async () => {
     const agent = new Agent({
       model: mockModel([{ text: "a reasonably long local-model reply for estimation purposes" }]), // no usage reported
       modelId: "ollama/qwen3",
@@ -148,22 +148,6 @@ describe("tool progress pump", () => {
     expect(usage.inputTokens).toBeGreaterThan(0); // estimated, not zero
     expect(usage.outputTokens).toBeGreaterThan(0);
     expect(agent.totalInputTokens).toBeGreaterThan(0);
-
-    const groqAgent = new Agent({
-      model: mockModel([{ text: "hi", usage: { inputTokens: 1000, outputTokens: 100 } }]),
-      modelId: "groq/llama-3.3-70b-versatile",
-      systemPrompt: "test",
-      tools: [],
-      policy: new PermissionPolicy([], false),
-      onPermission: async () => ({ kind: "allow" }),
-      cwd: process.cwd(),
-      allowOutsideCwd: false,
-    });
-    const groqEvents: AgentEvent[] = [];
-    for await (const e of groqAgent.send("hi")) groqEvents.push(e);
-    const groqUsage = groqEvents.find((e) => e.type === "usage") as Extract<AgentEvent, { type: "usage" }>;
-    expect(groqUsage.costUsd).toBeUndefined(); // free-tier provider — never bill on screen
-    expect(groqAgent.totalCostUsd).toBe(0);
   });
 
   test("iteration cap yields an error event instead of stopping silently", async () => {

@@ -4,7 +4,6 @@ import type { ToolDef, ToolContext } from "../tools/types.js";
 import { PermissionPolicy, targetFor } from "../permissions/policy.js";
 import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
-import { catalogEntry } from "../providers/catalog.js";
 import { shouldCompact, compact } from "./compact.js";
 import { Checkpoints } from "./checkpoints.js";
 import path from "node:path";
@@ -358,13 +357,9 @@ export class Agent {
         this.lastInputTokens = inTok;
         this.totalInputTokens += inTok;
         this.totalOutputTokens += outTok;
-        // Free-tier providers (Groq dev tier, Google AI Studio, ...) are not
-        // billed — showing projected dollars there misleads, so cost stays
-        // blank for them. Paid enrollment can't be detected from here.
-        const provider = this.opts.modelId.split("/")[0] ?? "";
-        const cost = catalogEntry(provider)?.freeTier
-          ? undefined
-          : estimateCostUsd(this.opts.modelId, inTok, outTok);
+        // Projected cost, Groq-console-style: computed even on free tiers
+        // (frontends label it "not billed" for freeTier providers).
+        const cost = estimateCostUsd(this.opts.modelId, inTok, outTok);
         if (cost !== undefined) this.totalCostUsd += cost;
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };
 
