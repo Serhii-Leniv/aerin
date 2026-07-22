@@ -27,17 +27,18 @@ const purple = wrap(() => C.magenta);
 const orange = wrap(() => C.orange);
 const fg = wrap(() => C.fg);
 const id = (s: string) => s;
+// Pop N' Lock fidelity: gold functions/classes, lime strings, pink-red types.
 const SYNTAX_THEME = {
-  keyword: pinkPlain,
+  keyword: fg,
   built_in: cyan,
-  type: purple,
+  type: pinkPlain,
   literal: purple,
-  number: purple,
-  regexp: yellow,
-  string: yellow,
-  class: cyan,
-  function: green,
-  title: green,
+  number: orange,
+  regexp: green,
+  string: green,
+  class: yellow,
+  function: yellow,
+  title: yellow,
   params: orange,
   comment: dim,
   doctag: dim,

@@ -152,8 +152,8 @@ const LOGO = [
   "╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝",
 ] as const;
 const MIN_LOGO_COLUMNS = 42;
-/** Row shades for the wordmark: bright pink at the top melting into synth purple. */
-const SUNSET = ["#ffa3c7", "#ff8db6", "#ff77a9", "#f75f9c", "#e0559f", "#bd93f9"] as const;
+/** Row shades for the wordmark: bright pink-red at the top melting into magenta. */
+const SUNSET = ["#ff5577", "#f7446e", "#ee3366", "#e04477", "#d05590", "#c055a9"] as const;
 
 /** Truecolor ANSI paint for banner text baked into the transcript. */
 function paint(s: string, hex: string, bold = false): string {

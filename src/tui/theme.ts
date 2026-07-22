@@ -1,47 +1,46 @@
 /**
- * Aerin's color theme: Cyberpunk Synthwave, tuned for reading — electric pink
- * hero, sky-cyan interactive voice (full-neon cyan halates on dark and
- * vanishes on light backgrounds, so the cyan is softened), Dracula-family
- * accents, and a pink → purple → cyan sunset gradient on the wordmark.
+ * Aerin's color theme: Pop N' Lock (after Luxcium's VS Code theme) — vivid,
+ * balanced colors on a deep navy ground: pink-red hero #ee3366, bright-blue
+ * interactive voice, lime success, golden warnings, warm cream foreground.
  * Central palette: UI code refers to roles, never raw colors, so retheming is
  * a one-file change. The palette is mutable so background detection can swap
  * in the light-terminal variants before first render.
  */
 export const C = {
   /** Interactive accent: prompts, model name, pickers, links. */
-  accent: "#5cc8ff", // sky cyan — readable as text on dark and light
+  accent: "#88bbdd", // bright blue — Pop N' Lock's variable/link blue family
   /** Main brand hero: the wordmark, prompt marker, borders. */
-  accentBright: "#ff77a9", // electric pink
-  /** Secondary/meta text. */
-  dim: "#6272a4", // muted purple-gray
-  /** Success / done. */
-  ok: "#50fa7b", // neon green
-  /** Warnings, in-progress, queued. */
-  warn: "#e6c86e", // soft gold — stays visible on white terminals
-  /** Errors and destructive hints. */
-  error: "#ff5555", // hot red
-  /** Plan mode, section headers, reasoning. */
-  magenta: "#bd93f9", // synth purple
-  /** Code accents (params, punctuation warmth). */
-  orange: "#ffb86c",
-  /** Default foreground (rarely set explicitly — terminal fg is close). */
-  fg: "#f8f8f2",
-  /** Hero gradient (wordmark, brand moments): synthwave sunset. */
-  heroGradient: ["#ff77a9", "#bd93f9", "#5cc8ff"] as readonly string[],
+  accentBright: "#ee3366", // vivid pink-red — the theme's signature pop
+  /** Secondary/meta text — slate with the navy ground's undertone. */
+  dim: "#6e739e",
+  /** Success / done — lime (ansiBrightGreen). */
+  ok: "#b5d033",
+  /** Warnings, in-progress, queued — golden (ansiBrightYellow). */
+  warn: "#face2f",
+  /** Errors and destructive hints — rust red (ansiRed), distinct from the pink hero. */
+  error: "#cc371e",
+  /** Plan mode, section headers, reasoning — bright magenta. */
+  magenta: "#c055a9",
+  /** Code accents (params, punctuation warmth) — amber (ansiYellow). */
+  orange: "#e79931",
+  /** Default foreground — Pop N' Lock's warm cream. */
+  fg: "#d2c8be",
+  /** Hero gradient stops (kept for brand moments): pink-red into magenta. */
+  heroGradient: ["#ee3366", "#dd6688", "#c055a9"] as readonly string[],
 };
 
 /** Same roles re-picked for white/light terminal backgrounds. */
 const LIGHT: typeof C = {
-  accent: "#006db8", // deep sky
-  accentBright: "#d6336c", // raspberry — pink hero, darkened for white
-  dim: "#5f6b8c",
-  ok: "#1f9d55",
+  accent: "#3e7ca6",
+  accentBright: "#c11e50", // deepened pink-red hero for white
+  dim: "#6d6f8a",
+  ok: "#6b7d10", // olive lime
   warn: "#9a7b00",
-  error: "#d63031",
-  magenta: "#7048b6",
-  orange: "#c2571a",
-  fg: "#1a1a2e",
-  heroGradient: ["#d6336c", "#7048b6", "#006db8"] as readonly string[],
+  error: "#b32e14",
+  magenta: "#93387f",
+  orange: "#b26a12",
+  fg: "#3a3733", // warm ink
+  heroGradient: ["#c11e50", "#a83a6e", "#93387f"] as readonly string[],
 };
 
 let lightMode = false;

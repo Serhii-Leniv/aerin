@@ -216,7 +216,7 @@ export function LineInput(props: {
         <Text color={C.accent}>{props.prompt}</Text>
         <Text>{before}</Text>
         {props.active ? (
-          <Text backgroundColor={C.accentBright} color="#16161e">
+          <Text backgroundColor={C.accentBright} color="#20213b">
             {at}
           </Text>
         ) : (
