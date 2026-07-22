@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
-import { isRetryableError, pruneOldToolResults, stripReasoningParts } from "../src/core/agent.js";
+import { enrichProviderError, isRetryableError, pruneOldToolResults, stripReasoningParts } from "../src/core/agent.js";
+import { redactSecrets } from "../src/terminal/format.js";
 import { startJob, getJob, bashOutputTool } from "../src/tools/bash-jobs.js";
 
 describe("isRetryableError", () => {
@@ -16,6 +17,34 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("401 invalid api key"))).toBe(false);
     expect(isRetryableError(new Error("model not found"))).toBe(false);
     expect(isRetryableError(new Error("invalid request: messages must not be empty"))).toBe(false);
+  });
+});
+
+describe("enrichProviderError", () => {
+  test("auth errors point at /connect for the right provider", () => {
+    const out = enrichProviderError("groq/qwen/qwen3.6-27b", "Invalid API Key");
+    expect(out).toContain("[groq/qwen/qwen3.6-27b]");
+    expect(out).toContain("/connect groq");
+  });
+
+  test("rate limits and quotas get actionable hints", () => {
+    expect(enrichProviderError("xai/grok-4", "429 Too Many Requests")).toContain("rate limit");
+    expect(enrichProviderError("openrouter/x", "insufficient credits")).toContain("billing");
+  });
+
+  test("unknown errors still carry the model context", () => {
+    expect(enrichProviderError("openai/gpt-4o", "something odd")).toBe("[openai/gpt-4o] something odd");
+  });
+});
+
+describe("redactSecrets", () => {
+  test("masks key-shaped strings, keeps prose", () => {
+    const out = redactSecrets("use gsk_abc123def456ghi789 and sk-or-v1-aaaabbbbccccdddd please");
+    expect(out).not.toContain("gsk_abc123def456ghi789");
+    expect(out).not.toContain("sk-or-v1-aaaabbbbccccdddd");
+    expect(out).toContain("[redacted]");
+    expect(out).toContain("please");
+    expect(redactSecrets("no secrets here")).toBe("no secrets here");
   });
 });
 

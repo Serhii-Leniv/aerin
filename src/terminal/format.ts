@@ -10,6 +10,13 @@ export function messageText(m: ModelMessage): string {
     .join("");
 }
 
+const SECRET_RE = /\b(sk-[A-Za-z0-9_-]{12,}|gsk_[A-Za-z0-9_-]{12,}|xai-[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{20,}|csk-[A-Za-z0-9_-]{12,})\b/g;
+
+/** Mask API-key-shaped strings before text lands anywhere persistent. */
+export function redactSecrets(text: string): string {
+  return text.replace(SECRET_RE, (m) => `${m.slice(0, 6)}…[redacted]`);
+}
+
 /** Set the terminal window/tab title (OSC 0). */
 export function setTerminalTitle(title: string): void {
   if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${title}\x07`);

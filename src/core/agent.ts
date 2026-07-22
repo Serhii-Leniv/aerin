@@ -41,6 +41,22 @@ export function toPlainJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Attach provider context and an actionable hint to a raw provider error. */
+export function enrichProviderError(modelId: string, message: string): string {
+  const provider = modelId.split("/")[0] ?? "provider";
+  let hint = "";
+  if (/invalid.?api.?key|unauthorized|authentication|\b401\b|\b403\b/i.test(message)) {
+    hint = ` — check your ${provider} key: /connect ${provider}`;
+  } else if (/per.day|daily|quota|insufficient.credit|billing|payment/i.test(message)) {
+    hint = ` — ${provider} quota or billing limit; try another model (/model)`;
+  } else if (/rate.?limit|too many requests|\b429\b/i.test(message)) {
+    hint = ` — ${provider} rate limit; wait a moment or switch models (/model)`;
+  } else if (/model.*(not.?found|does.?not.?exist|decommissioned|deprecated)/i.test(message)) {
+    hint = ` — that model id may be wrong or retired; pick another (/model)`;
+  }
+  return `[${modelId}] ${message}${hint}`;
+}
+
 /**
  * Drop reasoning ("thinking") parts from an assistant message before storing
  * it. They are streamed to the UI live, but replaying them in history breaks
@@ -374,7 +390,7 @@ export class Agent {
         this.patchDanglingToolCalls(newMessages);
         yield { type: "error", message: "Interrupted." };
       } else {
-        yield { type: "error", message: errorMessage(err) };
+        yield { type: "error", message: enrichProviderError(this.opts.modelId, errorMessage(err)) };
       }
     } finally {
       this.currentAbort = undefined;

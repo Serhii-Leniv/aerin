@@ -1,7 +1,8 @@
 import type { AerinConfig } from "../config/config.js";
-import { customProviders, resolveApiKey } from "./registry.js";
-import { catalogEntry } from "./catalog.js";
-import { MODEL_TABLE } from "./models.js";
+import { customProviders, resolveApiKey, PROVIDERS } from "./registry.js";
+import { catalogEntry, PROVIDER_CATALOG } from "./catalog.js";
+import { knownModelInfo } from "./models.js";
+import { primeModelsDev } from "./modelsdev.js";
 
 /**
  * Live model discovery: query each provider's models endpoint for whatever
@@ -171,6 +172,11 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
   const models: DiscoveredModel[] = [];
   const warnings: string[] = [];
 
+  // Pricing/context metadata from models.dev (cached daily; silent on failure).
+  await primeModelsDev([
+    ...new Set([...Object.keys(PROVIDERS), ...PROVIDER_CATALOG.map((e) => e.id), ...customProviders(config)]),
+  ]).catch(() => 0);
+
   // Custom OpenAI-compatible providers: query <baseURL>/models like OpenAI.
   const customListers: Record<string, Lister> = {};
   for (const name of customProviders(config)) {
@@ -185,7 +191,7 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
         const freeTier = catalogEntry(provider)?.freeTier === true;
         for (const m of bare) {
           const fullId = `${provider}/${m.id}`;
-          const known = MODEL_TABLE[fullId];
+          const known = knownModelInfo(fullId);
           models.push({
             ...m,
             id: fullId,

@@ -11,7 +11,7 @@ import { discoverSkills } from "./core/skills.js";
 import { discoverCommands, type CustomCommand } from "./core/commands.js";
 import { PermissionPolicy } from "./permissions/policy.js";
 import { loadConfig, DEFAULT_MODEL } from "./config/config.js";
-import { resolveModel, providersWithKeys } from "./providers/registry.js";
+import { resolveModel, providersWithKeys, PROVIDERS } from "./providers/registry.js";
 import { detectOllamaModel } from "./providers/list-models.js";
 import { GLOBAL_CONFIG_FILE } from "./config/paths.js";
 import { SessionStore } from "./session/store.js";
@@ -125,6 +125,13 @@ export async function setupAgent(
     warnings.push(...res.warnings);
     for (const c of mcpConnections) tools.push(...c.tools);
   }
+
+  // Pricing/context metadata in the background — cost meter fills in as it lands.
+  void import("./providers/modelsdev.js")
+    .then(({ primeModelsDev }) =>
+      primeModelsDev([...new Set([...Object.keys(PROVIDERS), ...Object.keys(config.providers ?? {})])]),
+    )
+    .catch(() => {});
 
   const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo);
   const skills = await discoverSkills(cwd);

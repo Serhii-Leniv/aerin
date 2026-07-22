@@ -6,7 +6,7 @@ import type { ModelMessage } from "ai";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { messageText, setTerminalTitle } from "../terminal/format.js";
+import { messageText, redactSecrets, setTerminalTitle } from "../terminal/format.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -60,9 +60,12 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   // (Ink would otherwise insert them into the input as garbage text).
   const mouse = new EventEmitter();
   tuiSetup.mouse = mouse;
+  // AERIN_SMOKE=1: CI smoke mode — pretend the streams are a TTY so the full
+  // render pipeline runs headless, then self-exit via a synthesized /exit.
+  const smoke = process.env["AERIN_SMOKE"] === "1";
   const filteredStdin = new PassThrough();
   Object.assign(filteredStdin, {
-    isTTY: process.stdin.isTTY,
+    isTTY: smoke || process.stdin.isTTY,
     setRawMode: (mode: boolean) => {
       if (process.stdin.isTTY) process.stdin.setRawMode(mode);
       return filteredStdin;
@@ -70,6 +73,12 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     ref: () => process.stdin.ref(),
     unref: () => process.stdin.unref(),
   });
+  if (smoke) {
+    // One keystroke per chunk — coalesced writes would parse as pasted text.
+    [..."/exit\r"].forEach((ch, i) => {
+      setTimeout(() => filteredStdin.write(ch), 1500 + i * 80);
+    });
+  }
 
   let carry = "";
   const onStdinData = (chunk: Buffer): void => {
@@ -118,6 +127,9 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     // in the normal terminal so the session survives in scrollback.
     printTranscript(setup.agent.history);
     await stopMcpServers(setup.mcpConnections);
+    // Piped-stdin runtimes can keep the loop alive after cleanup — the smoke
+    // harness needs a deterministic exit.
+    if (smoke) process.exit(0);
   }
 }
 
@@ -140,5 +152,6 @@ function printTranscript(history: readonly ModelMessage[]): void {
     }
   }
   if (out.length === 0) return;
-  process.stdout.write(`\n── aerin session transcript ──\n\n${out.join("\n\n")}\n\n`);
+  // Never let key-shaped strings land in shell scrollback.
+  process.stdout.write(`\n── aerin session transcript ──\n\n${redactSecrets(out.join("\n\n"))}\n\n`);
 }

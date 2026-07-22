@@ -35,8 +35,20 @@ export const MODEL_TABLE: Record<string, ModelInfo> = {
   "xai/grok-code-fast-1": { contextWindow: 256_000, maxOutput: 32_000, inputPerMTok: 0.2, outputPerMTok: 1.5 },
 };
 
+/** Runtime-registered metadata (e.g. from the models.dev registry). */
+const DYNAMIC_TABLE: Record<string, ModelInfo> = {};
+
+export function registerModelInfo(modelId: string, info: ModelInfo): void {
+  DYNAMIC_TABLE[modelId] = info;
+}
+
+/** Metadata when we actually know the model — no default fallback. */
+export function knownModelInfo(modelId: string): ModelInfo | undefined {
+  return MODEL_TABLE[modelId] ?? DYNAMIC_TABLE[modelId];
+}
+
 export function modelInfo(modelId: string): ModelInfo {
-  return MODEL_TABLE[modelId] ?? DEFAULT_MODEL_INFO;
+  return knownModelInfo(modelId) ?? DEFAULT_MODEL_INFO;
 }
 
 export function estimateCostUsd(
@@ -44,7 +56,7 @@ export function estimateCostUsd(
   inputTokens: number,
   outputTokens: number,
 ): number | undefined {
-  const info = modelInfo(modelId);
-  if (info.inputPerMTok === undefined || info.outputPerMTok === undefined) return undefined;
+  const info = knownModelInfo(modelId);
+  if (!info || info.inputPerMTok === undefined || info.outputPerMTok === undefined) return undefined;
   return (inputTokens / 1e6) * info.inputPerMTok + (outputTokens / 1e6) * info.outputPerMTok;
 }

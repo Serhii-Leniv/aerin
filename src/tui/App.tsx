@@ -15,7 +15,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { messageText, relativeTime, setTerminalTitle } from "../terminal/format.js";
+import { messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 import { C } from "./theme.js";
@@ -309,7 +309,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       setWorking(true);
       const dirName = setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin";
       setTerminalTitle(`✶ ${(display ?? prompt).replace(/\s+/g, " ").slice(0, 40)} — aerin`);
-      pushItem("user", display ?? prompt);
+      pushItem("user", redactSecrets(display ?? prompt));
       // @path tokens attach the named files to the prompt (display stays clean).
       const expanded = await expandMentions(prompt, setup.cwd).catch(() => prompt);
       try {
