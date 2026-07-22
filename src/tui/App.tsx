@@ -419,6 +419,30 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     [setup, pushItem, replayHistory],
   );
 
+  const openModelPicker = useCallback(async (): Promise<void> => {
+    setModelPicker("loading");
+    const { models, warnings } = await discoverModels(setup.config);
+    for (const w of warnings) pushItem("error", w);
+    if (models.length > 0) {
+      setModelPicker(models);
+    } else {
+      // No provider reachable — fall back to the known-model metadata table.
+      pushItem(
+        "info",
+        "No provider model lists reachable — showing known models. You can always type /model provider/any-id directly.",
+      );
+      setModelPicker(
+        Object.entries(MODEL_TABLE).map(([id, info]) => ({
+          id,
+          provider: id.split("/")[0] ?? "",
+          contextWindow: info.contextWindow,
+          ...(info.inputPerMTok !== undefined ? { inputPerMTok: info.inputPerMTok } : {}),
+          ...(info.outputPerMTok !== undefined ? { outputPerMTok: info.outputPerMTok } : {}),
+        })),
+      );
+    }
+  }, [setup, pushItem]);
+
   const handleCommand = useCallback(
     async (line: string): Promise<void> => {
       const [cmd, ...rest] = line.split(/\s+/);
@@ -453,7 +477,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               ...setup.config.providers,
               [prov]: { ...setup.config.providers?.[prov], apiKey: key },
             };
-            pushItem("info", `(${prov} key saved — /model to pick a model)`);
+            pushItem("info", `(${prov} key saved — loading its models…)`);
+            await openModelPicker();
             return;
           }
           setConnectPicker(true);
@@ -512,24 +537,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             switchModel(arg);
             return;
           }
-          setModelPicker("loading");
-          const { models, warnings } = await discoverModels(setup.config);
-          for (const w of warnings) pushItem("error", w);
-          if (models.length > 0) {
-            setModelPicker(models);
-          } else {
-            // No provider reachable — fall back to the known-model metadata table.
-            pushItem("info", "No provider model lists reachable — showing known models. You can always type /model provider/any-id directly.");
-            setModelPicker(
-              Object.entries(MODEL_TABLE).map(([id, info]) => ({
-                id,
-                provider: id.split("/")[0] ?? "",
-                contextWindow: info.contextWindow,
-                ...(info.inputPerMTok !== undefined ? { inputPerMTok: info.inputPerMTok } : {}),
-                ...(info.outputPerMTok !== undefined ? { outputPerMTok: info.outputPerMTok } : {}),
-              })),
-            );
-          }
+          await openModelPicker();
           return;
         }
         default: {
@@ -542,7 +550,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
       }
     },
-    [setup, pushItem, exit, resumeSession, runTurn],
+    [setup, pushItem, exit, resumeSession, runTurn, openModelPicker],
   );
 
   // A failing command must never take down the TUI (or vanish silently).
@@ -883,7 +891,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                     ...setup.config.providers,
                     [prov]: { ...setup.config.providers?.[prov], apiKey: key },
                   };
-                  pushItem("info", `(${prov} key saved — /model to pick a model)`);
+                  pushItem("info", `(${prov} key saved — loading its models…)`);
+                  // Straight into the picker: shows what the key unlocks, and a
+                  // bad key surfaces immediately as a discovery warning.
+                  void openModelPicker().catch((err) =>
+                    pushItem("error", err instanceof Error ? err.message : String(err)),
+                  );
                 })
                 .catch((err) => pushItem("error", err instanceof Error ? err.message : String(err)));
             }}
