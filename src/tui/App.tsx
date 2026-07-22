@@ -9,7 +9,7 @@ import { PROVIDERS } from "../providers/registry.js";
 import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { VERSION } from "../version.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "../terminal/markdown.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
@@ -127,7 +127,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
   const flushStream = useCallback(() => {
     flushTimer.current = null;
-    setStreaming(streamBuf.current);
+    // Render markdown live while streaming — partial constructs (an unclosed
+    // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
+    setStreaming(renderMarkdown(streamBuf.current));
   }, []);
 
   const runTurn = useCallback(

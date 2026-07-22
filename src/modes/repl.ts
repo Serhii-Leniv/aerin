@@ -5,6 +5,7 @@ import type { PermissionDecision, PermissionRequest } from "../core/events.js";
 import { SessionStore } from "../session/store.js";
 import { discoverModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
+import { renderMarkdown } from "../terminal/markdown.js";
 
 interface ReplFlags {
   model?: string;
@@ -59,16 +60,27 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     }
   });
 
+  // Humans (TTY) get each message rendered as markdown once it completes;
+  // pipes/scripts get the raw token stream so output stays machine-readable.
+  const renderForTty = stdout.isTTY === true;
+
   const runTurn = async (prompt: string): Promise<void> => {
     running = true;
+    let textBuf = "";
     try {
       for await (const event of setup.agent.send(prompt)) {
         switch (event.type) {
           case "text-delta":
-            stdout.write(event.text);
+            if (renderForTty) textBuf += event.text;
+            else stdout.write(event.text);
             break;
           case "message-end":
-            stdout.write("\n");
+            if (renderForTty) {
+              stdout.write(renderMarkdown(textBuf) + "\n");
+              textBuf = "";
+            } else {
+              stdout.write("\n");
+            }
             break;
           case "tool-call":
             stdout.write(`\n  ⏺ ${event.summary}\n`);
@@ -90,6 +102,8 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       }
     } finally {
       running = false;
+      // A message cut short by interrupt/error never saw message-end — don't drop it.
+      if (renderForTty && textBuf.trim()) stdout.write(renderMarkdown(textBuf) + "\n");
     }
     const cost = setup.agent.totalCostUsd;
     stdout.write(
