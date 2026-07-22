@@ -3,10 +3,12 @@ import { Box, Static, Text, useApp, useInput } from "ink";
 import type { LanguageModel } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
+import type { AerinConfig } from "../config/config.js";
 import { MODEL_TABLE } from "../providers/models.js";
+import { discoverModels } from "../providers/list-models.js";
 import { SessionStore } from "../session/store.js";
 import { renderMarkdown } from "./markdown.js";
-import { LineInput, SelectList } from "./components/widgets.js";
+import { FilterSelect, LineInput, SelectList } from "./components/widgets.js";
 
 /** Everything the TUI needs, assembled by run.tsx. */
 export interface TuiSetup {
@@ -17,6 +19,7 @@ export interface TuiSetup {
   /** Swappable so the dialog can be wired after agent construction. */
   onPermissionRef: { current: OnPermission };
   resolveModelFn: (id: string) => LanguageModel;
+  config: AerinConfig;
 }
 
 /**
@@ -54,7 +57,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [working, setWorking] = useState(false);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
   const [denyReasonMode, setDenyReasonMode] = useState(false);
-  const [modelPicker, setModelPicker] = useState(false);
+  const [modelPicker, setModelPicker] = useState<"loading" | { id: string }[] | null>(null);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -169,8 +172,17 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         case "/model": {
           if (arg) {
             switchModel(arg);
+            return;
+          }
+          setModelPicker("loading");
+          const { models, warnings } = await discoverModels(setup.config);
+          for (const w of warnings) pushItem("error", w);
+          if (models.length > 0) {
+            setModelPicker(models.map((m) => ({ id: m.id })));
           } else {
-            setModelPicker(true);
+            // No provider reachable — fall back to the known-model metadata table.
+            pushItem("info", "No provider model lists reachable — showing known models. You can always type /model provider/any-id directly.");
+            setModelPicker(Object.keys(MODEL_TABLE).map((id) => ({ id })));
           }
           return;
         }
@@ -304,14 +316,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
-      {modelPicker ? (
+      {modelPicker === "loading" ? (
+        <Text color="gray">… fetching available models from your providers</Text>
+      ) : null}
+
+      {modelPicker && modelPicker !== "loading" ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan">Pick a model (current: {modelId})</Text>
-          <SelectList
+          <Text color="cyan">Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
+          <FilterSelect
             active={true}
-            items={Object.keys(MODEL_TABLE).map((id) => ({ label: id, value: id }))}
+            items={modelPicker.map((m) => ({ label: m.id, value: m.id }))}
+            onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
-              setModelPicker(false);
+              setModelPicker(null);
               switchModel(id);
             }}
           />

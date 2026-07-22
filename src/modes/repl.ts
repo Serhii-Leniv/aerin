@@ -3,6 +3,8 @@ import { stdin, stdout, stderr } from "node:process";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { PermissionDecision, PermissionRequest } from "../core/events.js";
 import { SessionStore } from "../session/store.js";
+import { discoverModels } from "../providers/list-models.js";
+import { resolveModel } from "../providers/registry.js";
 
 interface ReplFlags {
   model?: string;
@@ -15,11 +17,13 @@ interface ReplFlags {
 }
 
 const HELP = `Commands:
-  /help       show this help
-  /clear      clear conversation history
-  /compact    summarize and compact the conversation
-  /sessions   list sessions in this directory
-  /exit       quit
+  /help         show this help
+  /clear        clear conversation history
+  /compact      summarize and compact the conversation
+  /models       list models available from your providers
+  /model <id>   switch model (any provider/model-id)
+  /sessions     list sessions in this directory
+  /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
 
 /** Plain readline REPL — no Ink. Kept forever as the TUI's debugging lifeline. */
@@ -111,6 +115,24 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       if (line === "/compact") {
         await setup.agent.compactNow();
         stdout.write("  (compacted)\n");
+        continue;
+      }
+      if (line === "/models") {
+        stdout.write("  fetching model lists from your providers...\n");
+        const { models, warnings } = await discoverModels(setup.config);
+        for (const w of warnings) stderr.write(`  warning: ${w}\n`);
+        if (models.length === 0) stdout.write("  (no provider reachable — set an API key first)\n");
+        for (const m of models) stdout.write(`  ${m.id}\n`);
+        continue;
+      }
+      if (line.startsWith("/model ")) {
+        const id = line.slice("/model ".length).trim();
+        try {
+          setup.agent.setModel(resolveModel(id, setup.config), id);
+          stdout.write(`  model switched to ${id}\n`);
+        } catch (err) {
+          stdout.write(`  ${err instanceof Error ? err.message : err}\n`);
+        }
         continue;
       }
       if (line === "/sessions") {

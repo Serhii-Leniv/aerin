@@ -1,7 +1,6 @@
 import React from "react";
 import { render } from "ink";
 import { setupAgent, stopMcpServers } from "../cli.js";
-import { loadConfig } from "../config/config.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
 import { App, type TuiSetup } from "./App.js";
@@ -24,7 +23,6 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   };
 
   const setup = await setupAgent(flags, (req) => onPermissionRef.current(req));
-  const { config } = await loadConfig(setup.cwd);
 
   const tuiSetup: TuiSetup = {
     agent: setup.agent,
@@ -32,7 +30,8 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     cwd: setup.cwd,
     warnings: setup.warnings,
     onPermissionRef,
-    resolveModelFn: (id) => resolveModel(id, config),
+    resolveModelFn: (id) => resolveModel(id, setup.config),
+    config: setup.config,
   };
 
   const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {

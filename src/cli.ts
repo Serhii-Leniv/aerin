@@ -32,6 +32,7 @@ export interface AgentSetup {
   warnings: string[];
   modelId: string;
   cwd: string;
+  config: import("./config/config.js").AerinConfig;
 }
 
 export async function setupAgent(
@@ -88,7 +89,7 @@ export async function setupAgent(
     initialMessages,
   });
 
-  return { agent, mcpConnections, warnings, modelId, cwd };
+  return { agent, mcpConnections, warnings, modelId, cwd, config };
 }
 
 export async function main(argv: string[]): Promise<void> {
