@@ -150,6 +150,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     };
   }, [stdout]);
   const showLogo = size.columns >= MIN_LOGO_COLUMNS;
+  // One row short of the terminal: at full height Ink switches to a
+  // clear-terminal-per-frame fullscreen path, which visibly flickers on every
+  // keystroke. One spare row keeps it on the incremental line-diff path.
+  const usableRows = Math.max(10, size.rows - 1);
 
   const [items, setItems] = useState<TranscriptItem[]>(() =>
     setup.warnings.map((w, i) => ({ key: i, kind: "error" as const, text: `warning: ${w}` })),
@@ -554,7 +558,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   });
 
   return (
-    <Box flexDirection="column" height={size.rows} width={size.columns}>
+    <Box flexDirection="column" height={usableRows} width={size.columns}>
       {/* Pinned header */}
       <Box
         flexDirection="column"
