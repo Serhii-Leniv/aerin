@@ -106,7 +106,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
             break;
           case "message-end":
             if (renderForTty) {
-              stdout.write(renderMarkdown(textBuf) + "\n");
+              stdout.write(renderMarkdown(textBuf, (stdout.columns ?? 80) - 2) + "\n");
               textBuf = "";
             } else {
               stdout.write("\n");
@@ -148,7 +148,7 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     } finally {
       running = false;
       // A message cut short by interrupt/error never saw message-end — don't drop it.
-      if (renderForTty && textBuf.trim()) stdout.write(renderMarkdown(textBuf) + "\n");
+      if (renderForTty && textBuf.trim()) stdout.write(renderMarkdown(textBuf, (stdout.columns ?? 80) - 2) + "\n");
     }
     const cost = setup.agent.totalCostUsd;
     stdout.write(

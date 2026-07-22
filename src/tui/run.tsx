@@ -141,7 +141,7 @@ function printTranscript(history: readonly ModelMessage[]): void {
       if (t && !t.startsWith("[Conversation compacted")) out.push(`> ${t.split("\n")[0]?.slice(0, 200) ?? ""}`);
     } else if (m.role === "assistant") {
       const t = messageText(m).trim();
-      if (t) out.push(renderMarkdown(t));
+      if (t) out.push(renderMarkdown(t, (process.stdout.columns ?? 80) - 2));
     }
   }
   if (out.length === 0) return;

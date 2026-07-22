@@ -345,11 +345,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       new Promise<string>((resolve) => setQuestion({ q, options, resolve }));
   }, [setup]);
 
+  // Markdown reflow width: full window minus the ● indent and border slack.
+  const mdWidth = useCallback(() => Math.max(40, (stdout?.columns ?? 80) - 4), [stdout]);
+
   const flushStream = useCallback(() => {
     flushTimer.current = null;
     // Render markdown live while streaming — partial constructs (an unclosed
     // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
-    setStreaming(withDot(renderMarkdown(streamBuf.current)));
+    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())));
   }, []);
 
   const runTurn = useCallback(
@@ -396,7 +399,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               const text = streamBuf.current;
               streamBuf.current = "";
               setStreaming("");
-              if (text.trim()) pushItem("assistant", withDot(renderMarkdown(text)));
+              if (text.trim()) pushItem("assistant", withDot(renderMarkdown(text, mdWidth())));
               break;
             }
             case "tool-call":
@@ -485,7 +488,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         flushTimer.current = null;
         if (reasoningTimer.current) clearTimeout(reasoningTimer.current);
         reasoningTimer.current = null;
-        if (streamBuf.current.trim()) pushItem("assistant", withDot(renderMarkdown(streamBuf.current)));
+        if (streamBuf.current.trim()) pushItem("assistant", withDot(renderMarkdown(streamBuf.current, mdWidth())));
         streamBuf.current = "";
         setStreaming("");
         settleDialogs();
@@ -524,14 +527,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         if (Array.isArray(m.content)) {
           for (const part of m.content as { type?: string; text?: string; toolName?: string }[]) {
             if (part?.type === "text" && part.text?.trim()) {
-              add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(part.text)) });
+              add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(part.text, mdWidth())) });
             } else if (part?.type === "tool-call" && part.toolName) {
               add.push({ key: nextKey.current++, kind: "tool", text: `● ${part.toolName}` });
             }
           }
         } else {
           const t = messageText(m);
-          if (t.trim()) add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(t)) });
+          if (t.trim()) add.push({ key: nextKey.current++, kind: "assistant", text: withDot(renderMarkdown(t, mdWidth())) });
         }
       }
     }
