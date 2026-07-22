@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -119,6 +119,14 @@ function fmtTokens(n: number): string {
 export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.ReactElement {
   const { setup } = props;
   const { exit } = useApp();
+  const { stdout } = useStdout();
+
+  // Until the first message, a spacer pushes the input to the bottom of the
+  // window (banner top, prompt bottom — opencode-style). Once the conversation
+  // starts, layout flows naturally so scrollback keeps working.
+  const [startupPad, setStartupPad] = useState(
+    () => setup.agent.history.length === 0 && !props.initialPrompt,
+  );
 
   const [items, setItems] = useState<TranscriptItem[]>(() => [
     { key: 0, kind: "banner", text: "" },
@@ -344,6 +352,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setItems((prev) => [...prev, { key: nextKey.current++, kind: "banner", text: "" }]);
           setCtxTokens(0);
           setTodos([]);
+          setStartupPad(true); // back to the fresh-start layout: banner top, input bottom
           return;
         }
         case "/plan": {
@@ -452,6 +461,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     (value: string) => {
       const line = value.trim();
       if (!line || workingRef.current) return;
+      setStartupPad(false);
       setInputHistory((h) => (h[h.length - 1] === line ? h : [...h, line].slice(-100)));
       if (line.startsWith("/")) {
         runCommand(line);
@@ -708,6 +718,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             }}
           />
         </Box>
+      ) : null}
+
+      {startupPad && inputActive ? (
+        // banner ≈ 9 rows, warnings, input box 3, status 1, breathing room 2
+        <Box height={Math.max(0, (stdout?.rows ?? 24) - 15 - setup.warnings.length)} />
       ) : null}
 
       {inputActive ? (

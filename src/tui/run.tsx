@@ -47,6 +47,10 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),
   };
 
+  // Start with a clean viewport so the banner renders at the top of the window
+  // (2J clears the visible screen only — the user's scrollback is preserved).
+  process.stdout.write("\x1b[2J\x1b[H");
+
   const instance = render(<App setup={tuiSetup} {...(initialPrompt ? { initialPrompt } : {})} />, {
     exitOnCtrlC: false,
   });
