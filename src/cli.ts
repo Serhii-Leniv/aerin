@@ -42,6 +42,7 @@ export interface AgentSetup {
   /** Exposed so frontends can toggle plan mode. */
   policy: PermissionPolicy;
   customCommands: CustomCommand[];
+  skills: import("./core/skills.js").Skill[];
   /** Set when no model could be resolved; the agent holds an inert stub that
    *  makes no requests until the user picks a model with /model. */
   modelUnavailable?: string;
@@ -196,6 +197,7 @@ export async function setupAgent(
     config,
     policy,
     customCommands,
+    skills,
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
   };
 }

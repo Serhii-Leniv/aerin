@@ -193,6 +193,23 @@ export class Agent {
     return this.checkpoints.undoLastChange();
   }
 
+  private goal: string | undefined;
+
+  /** Pin a user-set session goal into every request's system prompt. */
+  setGoal(goal: string | undefined): void {
+    this.goal = goal?.trim() || undefined;
+  }
+
+  get currentGoal(): string | undefined {
+    return this.goal;
+  }
+
+  private effectiveSystemPrompt(): string {
+    return this.goal
+      ? `${this.opts.systemPrompt}\n\nSession goal (set by the user — keep every action pointed at it):\n${this.goal}`
+      : this.opts.systemPrompt;
+  }
+
   async compactNow(): Promise<void> {
     this.messages = await compact(this.opts.model, this.messages);
     await this.opts.store?.rewrite(this.messages);
@@ -221,13 +238,14 @@ export class Agent {
     allowSystemInMessages?: boolean;
   } {
     const pruned = pruneOldToolResults(this.messages);
+    const systemPrompt = this.effectiveSystemPrompt();
     if (!this.opts.modelId.startsWith("anthropic/")) {
-      return { system: this.opts.systemPrompt, messages: pruned };
+      return { system: systemPrompt, messages: pruned };
     }
     const cacheOpts = { anthropic: { cacheControl: { type: "ephemeral" } } };
     const withCache = (m: ModelMessage): ModelMessage =>
       ({ ...m, providerOptions: { ...(m as { providerOptions?: object }).providerOptions, ...cacheOpts } }) as ModelMessage;
-    const system = withCache({ role: "system", content: this.opts.systemPrompt } as ModelMessage);
+    const system = withCache({ role: "system", content: systemPrompt } as ModelMessage);
     const last = pruned[pruned.length - 1];
     const messages = last ? [system, ...pruned.slice(0, -1), withCache(last)] : [system];
     return { messages, allowSystemInMessages: true };

@@ -30,6 +30,9 @@ const HELP = `Commands:
   /model <id>   switch model (any provider/model-id)
   /resume       list previous conversations; /resume <number> to pick one
   /plan         toggle plan mode (read-only exploration, agent presents a plan)
+  /goal [text]  pin a session goal (/goal clear to remove)
+  /skills       list available skill packs
+  /mcp          list connected MCP servers
   /undo         revert the file changes of the last turn
   /connect <provider> <key>   save a provider API key to the global config
   /exit         quit
@@ -183,6 +186,35 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           }
         } else {
           stdout.write("  usage: /connect <provider> <api-key> [baseURL]\n");
+        }
+        return undefined;
+      }
+      if (line === "/skills") {
+        stdout.write(
+          setup.skills.length
+            ? setup.skills.map((s) => `  ${s.name} — ${s.description}\n`).join("")
+            : "  (no skills — add .aerin/skills/<name>/SKILL.md)\n",
+        );
+        return undefined;
+      }
+      if (line === "/mcp") {
+        stdout.write(
+          setup.mcpConnections.length
+            ? setup.mcpConnections.map((c) => `  ${c.serverName} — ${c.tools.length} tools\n`).join("")
+            : "  (no MCP servers — add mcpServers to the config)\n",
+        );
+        return undefined;
+      }
+      if (line === "/goal" || line.startsWith("/goal ")) {
+        const g = line.slice("/goal".length).trim();
+        if (g === "clear" || g === "off") {
+          setup.agent.setGoal(undefined);
+          stdout.write("  (goal cleared)\n");
+        } else if (g) {
+          setup.agent.setGoal(g);
+          stdout.write(`  ⌖ goal pinned: ${g}\n`);
+        } else {
+          stdout.write(setup.agent.currentGoal ? `  ⌖ ${setup.agent.currentGoal}\n` : "  (no goal set)\n");
         }
         return undefined;
       }

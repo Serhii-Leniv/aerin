@@ -31,6 +31,8 @@ export interface TuiSetup {
   onQuestionRef: { current: AskUser };
   policy: PermissionPolicy;
   customCommands: CustomCommand[];
+  skills: import("../core/skills.js").Skill[];
+  mcpConnections: import("../mcp/manager.js").McpConnection[];
   resolveModelFn: (id: string) => LanguageModel;
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
@@ -117,6 +119,9 @@ const SLASH_COMMANDS = [
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
+  { name: "/goal", description: "pin a session goal — /goal <text>, /goal clear, /goal to show" },
+  { name: "/skills", description: "list available skill packs" },
+  { name: "/mcp", description: "list connected MCP servers and their tools" },
   { name: "/help", description: "show commands and keys" },
   { name: "/exit", description: "quit aerin" },
 ] as const;
@@ -202,6 +207,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [questionOther, setQuestionOther] = useState(false);
   const [mode, setMode] = useState<PermissionMode>("manual");
   const planMode = mode === "plan";
+  const [goalSet, setGoalSet] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -653,6 +659,53 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             return;
           }
           setConnect({ step: "pick" });
+          return;
+        }
+        case "/skills": {
+          pushItem(
+            "info",
+            setup.skills.length > 0
+              ? `Skills:\n${setup.skills.map((s) => `  ${s.name.padEnd(Math.max(...setup.skills.map((x) => x.name.length)) + 2)}${s.description}`).join("\n")}\nThe agent loads one with the skill tool when a task matches.`
+              : "No skills found. Add one at .aerin/skills/<name>/SKILL.md (existing .claude/skills are read too).",
+          );
+          return;
+        }
+        case "/mcp": {
+          pushItem(
+            "info",
+            setup.mcpConnections.length > 0
+              ? `MCP servers:\n${setup.mcpConnections
+                  .map(
+                    (c) =>
+                      `  ${c.serverName} — ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}: ${c.tools
+                        .map((t) => t.name.replace(`mcp__${c.serverName}__`, ""))
+                        .slice(0, 8)
+                        .join(", ")}${c.tools.length > 8 ? ", …" : ""}`,
+                  )
+                  .join("\n")}`
+              : 'No MCP servers connected. Add them under "mcpServers" in the config (stdio or HTTP).',
+          );
+          return;
+        }
+        case "/goal": {
+          if (arg === "clear" || arg === "off") {
+            setup.agent.setGoal(undefined);
+            setGoalSet(false);
+            pushItem("info", "(goal cleared)");
+            return;
+          }
+          if (arg) {
+            setup.agent.setGoal(arg);
+            setGoalSet(true);
+            pushItem("info", `⌖ goal pinned: ${arg}`);
+            return;
+          }
+          pushItem(
+            "info",
+            setup.agent.currentGoal
+              ? `⌖ current goal: ${setup.agent.currentGoal}`
+              : "(no goal set — /goal <text> pins one into every request)",
+          );
           return;
         }
         case "/plan": {
@@ -1243,6 +1296,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
               : ""}
           </Text>
+          {goalSet ? <Text color={C.accent}> · ⌖ goal</Text> : null}
           {planMode ? <Text color={C.magenta}> · ⏸ plan (shift+tab)</Text> : null}
           {mode === "accept" ? <Text color={C.ok}> · ⏵⏵ accept edits (shift+tab)</Text> : null}
           {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}

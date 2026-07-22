@@ -48,6 +48,8 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     onQuestionRef,
     policy: setup.policy,
     customCommands: setup.customCommands,
+    skills: setup.skills,
+    mcpConnections: setup.mcpConnections,
     resolveModelFn: (id) => resolveModel(id, setup.config),
     config: setup.config,
     ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),

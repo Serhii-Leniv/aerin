@@ -150,6 +150,32 @@ describe("tool progress pump", () => {
     expect(agent.totalInputTokens).toBeGreaterThan(0);
   });
 
+  test("a pinned goal reaches the system prompt; clearing removes it", async () => {
+    const requests: string[] = [];
+    const model = mockModel([{ text: "ok", usage: { inputTokens: 1, outputTokens: 1 } }]);
+    const orig = (model as unknown as { doStream: (o: { prompt: unknown }) => Promise<unknown> }).doStream;
+    (model as unknown as { doStream: (o: { prompt: unknown }) => Promise<unknown> }).doStream = (o) => {
+      requests.push(JSON.stringify(o.prompt));
+      return orig.call(model, o);
+    };
+    const agent = new Agent({
+      model,
+      modelId: "mock/mock",
+      systemPrompt: "base rules",
+      tools: [],
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "allow" }),
+      cwd: process.cwd(),
+      allowOutsideCwd: false,
+    });
+    agent.setGoal("ship the release");
+    for await (const e of agent.send("hi")) void e;
+    expect(requests[0]).toContain("Session goal");
+    expect(requests[0]).toContain("ship the release");
+    agent.setGoal(undefined);
+    expect(agent.currentGoal).toBeUndefined();
+  });
+
   test("iteration cap yields an error event instead of stopping silently", async () => {
     const agent = new Agent({
       model: mockModel([
