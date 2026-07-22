@@ -10,9 +10,12 @@ import fs from "node:fs/promises";
 export class Checkpoints {
   /** One map per turn: absolute path -> original content, or null if the file did not exist. */
   private turns: Map<string, string | null>[] = [];
+  /** Undo depth: memory stays bounded even in marathon sessions. */
+  private static readonly MAX_TURNS = 20;
 
   beginTurn(): void {
     this.turns.push(new Map());
+    while (this.turns.length > Checkpoints.MAX_TURNS) this.turns.shift();
   }
 
   /** Capture a file's pre-change state, once per turn. */

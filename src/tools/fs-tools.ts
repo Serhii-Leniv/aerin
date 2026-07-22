@@ -62,7 +62,7 @@ export const readTool: ToolDef<z.ZodTypeAny> = {
     const abs = resolvePath(input.path, ctx);
     assertReadable(abs, ctx);
     const buf = await fs.readFile(abs);
-    if (buf.subarray(0, 8000).includes(0)) {
+    if (buf.includes(0)) {
       throw new Error(`${input.path} appears to be a binary file`);
     }
     const lines = buf.toString("utf8").split(/\r?\n/);

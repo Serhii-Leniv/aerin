@@ -81,14 +81,23 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   }
 
   let carry = "";
+  let carryTimer: ReturnType<typeof setTimeout> | undefined;
   const onStdinData = (chunk: Buffer): void => {
+    if (carryTimer) clearTimeout(carryTimer);
     let s = carry + chunk.toString("utf8");
     carry = "";
-    // Hold back a partial mouse sequence split across chunks.
+    // Hold back a partial mouse sequence split across chunks — but flush it
+    // shortly if no continuation arrives (it was real input, not a mouse event).
     const partial = /\x1b\[<[\d;]*$/.exec(s);
     if (partial) {
       carry = partial[0];
       s = s.slice(0, partial.index);
+      carryTimer = setTimeout(() => {
+        if (carry) {
+          filteredStdin.write(carry);
+          carry = "";
+        }
+      }, 60);
     }
     const re = /\x1b\[<(\d+);\d+;\d+[Mm]/g;
     let clean = "";

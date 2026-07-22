@@ -20,6 +20,15 @@ export interface BashJob {
 
 const jobs = new Map<string, BashJob>();
 let counter = 0;
+const MAX_FINISHED_JOBS = 20;
+
+/** Keep the registry bounded: exited jobs beyond the newest N are dropped. */
+function pruneFinished(): void {
+  const finished = [...jobs.values()].filter((j) => !j.running);
+  for (const j of finished.slice(0, Math.max(0, finished.length - MAX_FINISHED_JOBS))) {
+    jobs.delete(j.id);
+  }
+}
 
 export function startJob(command: string, cwd: string): BashJob {
   const shell = detectShell();
@@ -50,6 +59,7 @@ export function startJob(command: string, cwd: string): BashJob {
   child.on("exit", (code) => {
     job.running = false;
     job.exitCode = code;
+    pruneFinished();
   });
   jobs.set(job.id, job);
   // Deliberately NOT killed when aerin exits: a dev server you started should

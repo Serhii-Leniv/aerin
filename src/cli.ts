@@ -224,6 +224,12 @@ export async function main(argv: string[]): Promise<void> {
   };
   process.on("uncaughtException", crash);
   process.on("unhandledRejection", crash);
+  // Termination must restore the terminal too (MCP stdio children exit with
+  // their pipes; background bash jobs deliberately survive).
+  process.once("SIGTERM", () => {
+    process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+    process.exit(143);
+  });
 
   const program = new Command();
   program

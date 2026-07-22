@@ -65,6 +65,21 @@ export const globTool: ToolDef<z.ZodTypeAny> = {
 
 let rgPath: string | null | undefined; // undefined = not probed, null = unavailable
 
+/**
+ * Reject regex patterns with the classic catastrophic-backtracking shapes
+ * (nested/adjacent quantifiers like (a+)+ or (.*)*) before the JS fallback
+ * runs them per line. Heuristic, not a proof — paired with the line-length
+ * cap and scan deadline it keeps a hostile pattern from hanging the process.
+ */
+export function assertSafePattern(pattern: string): void {
+  if (pattern.length > 500) throw new Error("Pattern too long — simplify the regex.");
+  if (/[+*}]\s*\)[+*{?]|\)[+*]\s*[+*]/.test(pattern) || /\((?:[^()]*[+*][^()]*)\)[+*]/.test(pattern)) {
+    throw new Error(
+      "Pattern rejected: nested quantifiers like (a+)+ can hang the JS search fallback. Simplify it, or install ripgrep for full regex support.",
+    );
+  }
+}
+
 /** Places a ripgrep binary hides when it's not on PATH — most commonly the
  *  one bundled inside VS Code. (No @vscode/ripgrep dependency: its postinstall
  *  download conflicts with aerin's lean-install rule.) */
@@ -154,8 +169,10 @@ export const grepTool: ToolDef<z.ZodTypeAny> = {
     }
 
     // JS fallback: fast-glob + line-by-line regex
+    assertSafePattern(input.pattern);
     const re = new RegExp(input.pattern, input.case_insensitive ? "i" : "");
     const ig = await loadGitignore(searchPath);
+    const deadline = Date.now() + 10_000;
     const files = (
       await fg(input.glob ?? "**/*", {
         cwd: searchPath,
@@ -172,15 +189,20 @@ export const grepTool: ToolDef<z.ZodTypeAny> = {
       let text: string;
       try {
         const buf = await fs.readFile(path.join(searchPath, f));
-        if (buf.subarray(0, 8000).includes(0)) continue;
+        if (buf.includes(0)) continue;
         text = buf.toString("utf8");
       } catch {
         continue;
       }
       const lines = text.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
+        if ((i & 511) === 0 && Date.now() > deadline) {
+          results.push("[search stopped: pattern too slow — simplify it or install ripgrep]");
+          return truncateOutput(results.join("\n"));
+        }
         const line = lines[i];
-        if (line !== undefined && re.test(line)) {
+        // Cap tested line length: backtracking cost grows with input size.
+        if (line !== undefined && re.test(line.length > 4000 ? line.slice(0, 4000) : line)) {
           if (mode === "files") {
             results.push(f);
             break;

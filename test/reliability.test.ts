@@ -102,6 +102,28 @@ describe("pruneOldToolResults", () => {
   });
 });
 
+describe("assertSafePattern (ReDoS guard)", () => {
+  test("rejects catastrophic shapes, allows normal regexes", async () => {
+    const { assertSafePattern } = await import("../src/tools/search-tools.js");
+    for (const evil of ["(a+)+$", "(.*)*b", "(x+)*y", "([a-z]+)+@"]) {
+      expect(() => assertSafePattern(evil)).toThrow(/quantifiers/);
+    }
+    for (const fine of ["function\\s+\\w+", "TODO|FIXME", "^import .* from", "colou?r", "a{1,3}b"]) {
+      expect(() => assertSafePattern(fine)).not.toThrow();
+    }
+  });
+});
+
+describe("checkpoints bounded depth", () => {
+  test("keeps at most 20 turns", async () => {
+    const { Checkpoints } = await import("../src/core/checkpoints.js");
+    const cp = new Checkpoints();
+    for (let i = 0; i < 50; i++) cp.beginTurn();
+    // 50 empty turns collapse on undo without touching anything
+    expect(await cp.undoLastChange()).toEqual([]);
+  });
+});
+
 describe("background bash jobs", () => {
   test("start, incremental read, exit code", async () => {
     const job = startJob('echo hello-from-job && echo second-line', process.cwd());

@@ -22,7 +22,9 @@ export const memoryTool: ToolDef<z.ZodTypeAny> = {
   summarize: (i) => `Memory(${String(i.note).slice(0, 70)})`,
   preview: async (i) => `+ ${String(i.note).trim()}`,
   async execute(input, ctx) {
-    const note = `- ${String(input.note).trim().replace(/\s+/g, " ")}`;
+    // Injection hardening: single line (no heading breakouts), bounded length.
+    const clean = String(input.note).trim().replace(/\s+/g, " ").slice(0, 300);
+    const note = `- ${clean}`;
     if (note === "-") throw new Error("Empty note.");
     const file = path.join(ctx.cwd, "AGENTS.md");
     let content = "";
