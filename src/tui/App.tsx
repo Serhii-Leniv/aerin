@@ -332,11 +332,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     });
   }, []);
 
-  // Mouse wheel scrolls the transcript by lines, three per notch.
+  // Mouse wheel scrolls the transcript by lines, three per notch — unless a
+  // picker is open, in which case the picker owns the wheel.
+  const pickerOpenRef = useRef(false);
   useEffect(() => {
     const m = setup.mouse;
     if (!m) return;
-    const onWheel = (dir: number): void => scrollBy(dir < 0 ? 3 : -3);
+    const onWheel = (dir: number): void => {
+      if (pickerOpenRef.current) return;
+      scrollBy(dir < 0 ? 3 : -3);
+    };
     m.on("wheel", onWheel);
     return () => {
       m.off("wheel", onWheel);
@@ -909,6 +914,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // submitted mid-turn are queued and sent when the turn finishes. Only modal
   // dialogs take the input away.
   const inputActive = !permission && !modelPicker && !sessionPicker && !question && !connect;
+  pickerOpenRef.current = Boolean(
+    (modelPicker && modelPicker !== "loading") || sessionPicker || connect?.step === "pick",
+  );
 
   const allCommands = [
     ...SLASH_COMMANDS,
@@ -1139,6 +1147,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Connect a provider — type to filter, Enter to pick, Esc to cancel</Text>
           <FilterSelect
             active={true}
+            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={[
               { label: "Featured", value: "__header_featured", header: true },
               ...PROVIDER_CATALOG.map((e) => ({
@@ -1260,6 +1269,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
+            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={buildPickerItems(modelPicker, recentModels, modelId)}
             onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
@@ -1275,6 +1285,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Resume a conversation — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
+            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={sessionPicker.map((s) => ({
               label: `${relativeTime(s.createdAt).padEnd(11)} ${String(s.messageCount).padStart(3)} msg  ${s.title ?? "(no prompt yet)"}`,
               value: s.id,

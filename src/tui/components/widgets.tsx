@@ -324,6 +324,8 @@ export function FilterSelect(props: {
   onCancel: () => void;
   active: boolean;
   placeholder?: string;
+  /** Mouse wheel emitter (-1 up / +1 down) — scrolls the selection. */
+  wheel?: { on: (e: "wheel", fn: (dir: number) => void) => unknown; off: (e: "wheel", fn: (dir: number) => void) => unknown };
 }): React.ReactElement {
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0); // index into the selectable subset
@@ -349,6 +351,21 @@ export function FilterSelect(props: {
   const selectableRowIdx = rows.flatMap((r, i) => (r.header ? [] : [i]));
   const clampedSel = Math.min(sel, Math.max(0, selectableRowIdx.length - 1));
   const currentRow = selectableRowIdx[clampedSel] ?? -1;
+
+  // Mouse wheel moves the selection like the arrow keys.
+  const selectableCountRef = React.useRef(0);
+  selectableCountRef.current = selectableRowIdx.length;
+  useEffect(() => {
+    const w = props.wheel;
+    if (!w || !props.active) return;
+    const onWheel = (dir: number): void => {
+      setSel((s) => Math.max(0, Math.min(selectableCountRef.current - 1, s + dir)));
+    };
+    w.on("wheel", onWheel);
+    return () => {
+      w.off("wheel", onWheel);
+    };
+  }, [props.wheel, props.active]);
 
   useInput(
     (input, key) => {

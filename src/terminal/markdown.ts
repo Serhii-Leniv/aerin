@@ -16,6 +16,40 @@ const cyan = wrap("38;2;0;242;254"); // links
 const dim = wrap("38;2;98;114;164"); // blockquotes, hr
 const yellow = wrap("38;2;241;250;140"); // inline code
 
+// Synthwave syntax theme for fenced code (highlight.js token names).
+const pinkPlain = wrap("38;2;255;119;169");
+const green = wrap("38;2;80;250;123");
+const purple = wrap("38;2;189;147;249");
+const orange = wrap("38;2;255;184;108");
+const fg = wrap("38;2;248;248;242");
+const id = (s: string) => s;
+const SYNTAX_THEME = {
+  keyword: pinkPlain,
+  built_in: cyan,
+  type: purple,
+  literal: purple,
+  number: purple,
+  regexp: yellow,
+  string: yellow,
+  class: cyan,
+  function: green,
+  title: green,
+  params: orange,
+  comment: dim,
+  doctag: dim,
+  meta: dim,
+  tag: pinkPlain,
+  name: cyan,
+  attr: green,
+  attribute: green,
+  variable: fg,
+  symbol: purple,
+  bullet: cyan,
+  addition: green,
+  deletion: wrap("38;2;255;85;85"),
+  default: id,
+};
+
 let instance: Marked | undefined;
 let configuredWidth = 0;
 
@@ -44,7 +78,7 @@ function ensure(width: number): Marked {
       hr: dim,
       codespan: yellow,
       code: railed, // fenced blocks get a dim left rail instead of bare indent
-    }) as Parameters<Marked["use"]>[0],
+    }, colorEnabled ? { theme: SYNTAX_THEME as never } : undefined) as Parameters<Marked["use"]>[0],
   );
   return instance;
 }
