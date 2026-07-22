@@ -5,6 +5,7 @@ import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
 import { persistModelChoice, persistProviderKey, type AerinConfig } from "../config/config.js";
 import { renderCommand, type CustomCommand } from "../core/commands.js";
+import { listJobs } from "../tools/bash-jobs.js";
 import { allKnownModels, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
 import { PROVIDER_CATALOG, catalogEntry, keyLooksLike } from "../providers/catalog.js";
@@ -33,6 +34,7 @@ export interface TuiSetup {
   customCommands: CustomCommand[];
   skills: import("../core/skills.js").Skill[];
   mcpConnections: import("../mcp/manager.js").McpConnection[];
+  sessionId: string;
   resolveModelFn: (id: string) => LanguageModel;
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
@@ -119,6 +121,7 @@ const SLASH_COMMANDS = [
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
+  { name: "/status", description: "session overview — model, mode, tokens, servers, jobs" },
   { name: "/goal", description: "pin a session goal — /goal <text>, /goal clear, /goal to show" },
   { name: "/skills", description: "list available skill packs" },
   { name: "/mcp", description: "list connected MCP servers and their tools" },
@@ -208,6 +211,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [mode, setMode] = useState<PermissionMode>("manual");
   const planMode = mode === "plan";
   const [goalSet, setGoalSet] = useState(false);
+  const [latestVersion, setLatestVersion] = useState<string | undefined>(undefined);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
@@ -266,6 +270,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         });
         if (!res.ok) return;
         const latest = ((await res.json()) as { version?: string }).version;
+        if (latest) setLatestVersion(latest);
         if (latest && latest !== VERSION && VERSION !== "0.0.0") {
           pushItem("info", `(update available: v${latest} — run "aerin update")`);
         }
@@ -659,6 +664,29 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             return;
           }
           setConnect({ step: "pick" });
+          return;
+        }
+        case "/status": {
+          const window = modelInfo(modelId).contextWindow;
+          const pct = ctxTokens > 0 ? ` (${Math.round((ctxTokens / window) * 100)}% of ${fmtTokens(window)} used)` : "";
+          const freeTier = catalogEntry(modelId.split("/")[0] ?? "")?.freeTier;
+          const jobs = listJobs();
+          const running = jobs.filter((j) => j.running);
+          pushItem(
+            "info",
+            [
+              `aerin v${VERSION}${latestVersion && latestVersion !== VERSION ? `  (v${latestVersion} available — aerin update)` : ""}`,
+              `  session   ${setup.sessionId} · ${setup.agent.history.length} messages`,
+              `  model     ${modelId}${pct}`,
+              `  mode      ${mode === "accept" ? "accept edits" : mode}${setup.agent.currentGoal ? ` · ⌖ ${setup.agent.currentGoal.slice(0, 50)}` : ""}`,
+              `  cwd       ${shortenPath(setup.cwd, 60)}`,
+              `  tokens    ${fmtTokens(stats.inTok)}↑ ${fmtTokens(stats.outTok)}↓${stats.cost > 0 ? ` · $${stats.cost.toFixed(4)}${freeTier ? " (free tier — not billed)" : ""}` : ""}`,
+              `  mcp       ${setup.mcpConnections.length > 0 ? setup.mcpConnections.map((c) => c.serverName).join(", ") : "none"}`,
+              `  skills    ${setup.skills.length > 0 ? setup.skills.map((s) => s.name).join(", ") : "none"}`,
+              `  commands  ${setup.customCommands.length > 0 ? setup.customCommands.map((c) => "/" + c.name).join(", ") : "none"}`,
+              `  jobs      ${running.length > 0 ? running.map((j) => `${j.id} (${j.command.slice(0, 30)})`).join(", ") : jobs.length > 0 ? `${jobs.length} finished` : "none"}`,
+            ].join("\n"),
+          );
           return;
         }
         case "/skills": {

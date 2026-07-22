@@ -31,6 +31,7 @@ const HELP = `Commands:
   /resume       list previous conversations; /resume <number> to pick one
   /plan         toggle plan mode (read-only exploration, agent presents a plan)
   /goal [text]  pin a session goal (/goal clear to remove)
+  /status       session overview
   /skills       list available skill packs
   /mcp          list connected MCP servers
   /undo         revert the file changes of the last turn
@@ -187,6 +188,19 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         } else {
           stdout.write("  usage: /connect <provider> <api-key> [baseURL]\n");
         }
+        return undefined;
+      }
+      if (line === "/status") {
+        stdout.write(
+          [
+            `  session   ${setup.sessionId} · ${setup.agent.history.length} messages`,
+            `  model     ${setup.agent.modelId}`,
+            `  mode      ${setup.policy.currentMode}${setup.agent.currentGoal ? ` · goal: ${setup.agent.currentGoal.slice(0, 50)}` : ""}`,
+            `  tokens    ${setup.agent.totalInputTokens}↑ ${setup.agent.totalOutputTokens}↓`,
+            `  mcp       ${setup.mcpConnections.map((c) => c.serverName).join(", ") || "none"}`,
+            `  skills    ${setup.skills.map((s) => s.name).join(", ") || "none"}`,
+          ].join("\n") + "\n",
+        );
         return undefined;
       }
       if (line === "/skills") {
