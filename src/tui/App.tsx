@@ -207,7 +207,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [modelId, setModelId] = useState(setup.modelId);
   const [recentModels, setRecentModels] = useState<string[]>(setup.config.recentModels ?? []);
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
-  const [scrollOffset, setScrollOffset] = useState(0); // transcript items hidden from the bottom
+  const [scrollOffset, setScrollOffset] = useState(0); // lines scrolled back from the live bottom
   const [queued, setQueued] = useState<string[]>([]); // messages typed while the agent was working
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -270,22 +270,47 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mouse wheel scrolls the transcript like PgUp/PgDn, two items per notch.
-  const itemsLenRef = useRef(0);
-  itemsLenRef.current = items.length;
+  // Flat line buffer of the transcript — the unit of scrolling. Blank lines
+  // reproduce the item margins so the scrolled view matches the live view.
+  const [viewportH, setViewportH] = useState(10);
+  const flatLines = React.useMemo(() => {
+    const lines: { key: string; kind: TranscriptItem["kind"]; text: string }[] = [];
+    for (const item of items) {
+      item.text.split("\n").forEach((line, i) => {
+        lines.push({
+          key: `${item.key}:${i}`,
+          kind: item.kind,
+          text: item.kind === "user" && i === 0 ? `❯ ${line}` : line,
+        });
+      });
+      if (item.kind === "assistant" || item.kind === "user") {
+        lines.push({ key: `${item.key}:m`, kind: "info", text: "" });
+      }
+    }
+    return lines;
+  }, [items]);
+  const flatLinesRef = useRef(flatLines);
+  flatLinesRef.current = flatLines;
+  const viewportHRef = useRef(viewportH);
+  viewportHRef.current = viewportH;
+
+  const scrollBy = useCallback((deltaLines: number) => {
+    setScrollOffset((o) => {
+      const max = Math.max(0, flatLinesRef.current.length - Math.max(4, viewportHRef.current));
+      return Math.min(max, Math.max(0, o + deltaLines));
+    });
+  }, []);
+
+  // Mouse wheel scrolls the transcript by lines, three per notch.
   useEffect(() => {
     const m = setup.mouse;
     if (!m) return;
-    const onWheel = (dir: number): void => {
-      setScrollOffset((o) =>
-        dir < 0 ? Math.min(Math.max(0, itemsLenRef.current - 1), o + 2) : Math.max(0, o - 2),
-      );
-    };
+    const onWheel = (dir: number): void => scrollBy(dir < 0 ? 3 : -3);
     m.on("wheel", onWheel);
     return () => {
       m.off("wheel", onWheel);
     };
-  }, [setup.mouse]);
+  }, [setup.mouse, scrollBy]);
 
   // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {
@@ -727,11 +752,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // Global keys: Esc interrupts; PgUp/PgDn scroll the transcript; double Ctrl+C exits.
   useInput((input, key) => {
     if (key.pageUp) {
-      setScrollOffset((o) => Math.min(Math.max(0, items.length - 1), o + 3));
+      scrollBy(Math.max(3, viewportHRef.current - 2));
       return;
     }
     if (key.pageDown) {
-      setScrollOffset((o) => Math.max(0, o - 3));
+      scrollBy(-Math.max(3, viewportHRef.current - 2));
       return;
     }
     if (key.escape && workingRef.current) {
@@ -789,6 +814,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     const c = contentRef.current ? measureElement(contentRef.current).height : 0;
     const next = v > 0 && c > v;
     setOverflowing((prev) => (prev === next ? prev : next));
+    if (v > 0) setViewportH((prev) => (prev === v ? prev : v));
   });
 
   return (
@@ -827,10 +853,34 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         flexDirection="column"
         flexGrow={1}
         overflowY="hidden"
-        justifyContent={overflowing ? "flex-end" : "flex-start"}
+        justifyContent={overflowing && scrollOffset === 0 ? "flex-end" : "flex-start"}
       >
+        {scrollOffset > 0 ? (
+          // History mode: an exact line window over the transcript.
+          (() => {
+            const end = Math.max(0, flatLines.length - scrollOffset);
+            const start = Math.max(0, end - viewportH);
+            return flatLines.slice(start, end).map((l) => (
+              <Box key={l.key} flexShrink={0}>
+                <Text
+                  color={
+                    l.kind === "user"
+                      ? C.accent
+                      : l.kind === "error" || l.kind === "tool-error"
+                        ? C.error
+                        : l.kind === "info"
+                          ? C.dim
+                          : undefined
+                  }
+                >
+                  {l.text || " "}
+                </Text>
+              </Box>
+            ));
+          })()
+        ) : (
         <Box ref={contentRef} flexDirection="column" flexShrink={0}>
-        {(scrollOffset > 0 ? items.slice(0, Math.max(0, items.length - scrollOffset)) : items)
+        {items
           .slice(-VIEWPORT_ITEMS)
           .map((item) => (
           <Box
@@ -892,6 +942,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
         </Box>
+        )}
       </Box>
 
       {/* Bottom section: dialogs, input, status — pinned by layout. */}
