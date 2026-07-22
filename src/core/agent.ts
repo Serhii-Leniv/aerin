@@ -9,6 +9,36 @@ import type { SessionStore } from "../session/store.js";
 
 const MAX_ITERATIONS = 50;
 
+/**
+ * Strip non-JSON values (undefined properties, class instances) from
+ * provider-returned messages. Some providers (seen: OpenRouter's
+ * reasoning_details) attach `undefined` fields inside providerOptions,
+ * which fails the AI SDK's ModelMessage validation on the NEXT request —
+ * and would corrupt our JSONL session files anyway.
+ */
+export function toPlainJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Providers throw strings, Errors, and bare objects — normalize to a readable message. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null) {
+    const o = err as Record<string, unknown>;
+    if (typeof o["message"] === "string") return o["message"];
+    if (typeof o["error"] === "object" && o["error"] !== null) {
+      const inner = o["error"] as Record<string, unknown>;
+      if (typeof inner["message"] === "string") return inner["message"];
+    }
+    try {
+      return JSON.stringify(err).slice(0, 500);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
 export interface AgentOptions {
   model: LanguageModel;
   modelId: string;
@@ -118,14 +148,15 @@ export class Agent {
           } else if (part.type === "tool-call") {
             toolCalls.push({ toolCallId: part.toolCallId, toolName: part.toolName, input: part.input });
           } else if (part.type === "error") {
-            throw part.error instanceof Error ? part.error : new Error(String(part.error));
+            throw part.error instanceof Error ? part.error : new Error(errorMessage(part.error));
           }
         }
         if (sawText) yield { type: "message-end" };
 
         const response = await result.response;
-        this.messages.push(...response.messages);
-        newMessages.push(...response.messages);
+        const sanitized = response.messages.map((m) => toPlainJson(m));
+        this.messages.push(...sanitized);
+        newMessages.push(...sanitized);
 
         const usage = await result.usage;
         const inTok = usage.inputTokens ?? 0;
@@ -160,7 +191,7 @@ export class Agent {
         this.patchDanglingToolCalls(newMessages);
         yield { type: "error", message: "Interrupted." };
       } else {
-        yield { type: "error", message: err instanceof Error ? err.message : String(err) };
+        yield { type: "error", message: errorMessage(err) };
       }
     } finally {
       this.currentAbort = undefined;

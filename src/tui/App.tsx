@@ -4,8 +4,8 @@ import type { LanguageModel } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
 import type { AerinConfig } from "../config/config.js";
-import { MODEL_TABLE } from "../providers/models.js";
-import { discoverModels } from "../providers/list-models.js";
+import { MODEL_TABLE, modelInfo } from "../providers/models.js";
+import { discoverModels, formatModelLabel, type DiscoveredModel } from "../providers/list-models.js";
 import { SessionStore } from "../session/store.js";
 import { renderMarkdown } from "./markdown.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -45,6 +45,12 @@ interface PendingPermission {
 const HELP_TEXT = `Commands: /help /clear /compact /model [provider/id] /sessions /exit
 Esc interrupts a running turn. Ctrl+C twice exits.`;
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1e3).toFixed(n >= 100_000 ? 0 : 1)}k`;
+  return String(n);
+}
+
 export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.ReactElement {
   const { setup } = props;
   const { exit } = useApp();
@@ -57,12 +63,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [working, setWorking] = useState(false);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
   const [denyReasonMode, setDenyReasonMode] = useState(false);
-  const [modelPicker, setModelPicker] = useState<"loading" | { id: string }[] | null>(null);
+  const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [exitArmed, setExitArmed] = useState(false);
   const [stats, setStats] = useState({ inTok: 0, outTok: 0, cost: 0 });
   const [modelId, setModelId] = useState(setup.modelId);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
+  const [reasoningTail, setReasoningTail] = useState("");
+  const [ctxTokens, setCtxTokens] = useState(0);
+  const reasoningBuf = useRef("");
+  const reasoningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const nextKey = useRef(100);
   const streamBuf = useRef("");
@@ -92,11 +102,23 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       try {
         for await (const event of setup.agent.send(prompt)) {
           switch (event.type) {
-            case "reasoning-delta":
+            case "reasoning-delta": {
               setThinking(true);
+              reasoningBuf.current += event.text;
+              if (!reasoningTimer.current) {
+                reasoningTimer.current = setTimeout(() => {
+                  reasoningTimer.current = null;
+                  // Show only the tail — enough to follow along without flooding.
+                  const lines = reasoningBuf.current.split("\n").filter((l) => l.trim());
+                  setReasoningTail(lines.slice(-3).join("\n"));
+                }, 80);
+              }
               break;
+            }
             case "text-delta": {
               setThinking(false);
+              reasoningBuf.current = "";
+              setReasoningTail("");
               streamBuf.current += event.text;
               if (!flushTimer.current) flushTimer.current = setTimeout(flushStream, 50);
               break;
@@ -122,6 +144,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               pushItem("info", `[compacting context — was ${event.preTokens} tokens]`);
               break;
             case "usage":
+              setCtxTokens(event.inputTokens); // context size of the latest request
               setStats({
                 inTok: setup.agent.totalInputTokens,
                 outTok: setup.agent.totalOutputTokens,
@@ -139,6 +162,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         workingRef.current = false;
         setWorking(false);
         setThinking(false);
+        setReasoningTail("");
+        reasoningBuf.current = "";
         setPermission(null);
       }
     },
@@ -184,11 +209,19 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           const { models, warnings } = await discoverModels(setup.config);
           for (const w of warnings) pushItem("error", w);
           if (models.length > 0) {
-            setModelPicker(models.map((m) => ({ id: m.id })));
+            setModelPicker(models);
           } else {
             // No provider reachable — fall back to the known-model metadata table.
             pushItem("info", "No provider model lists reachable — showing known models. You can always type /model provider/any-id directly.");
-            setModelPicker(Object.keys(MODEL_TABLE).map((id) => ({ id })));
+            setModelPicker(
+              Object.entries(MODEL_TABLE).map(([id, info]) => ({
+                id,
+                provider: id.split("/")[0] ?? "",
+                contextWindow: info.contextWindow,
+                ...(info.inputPerMTok !== undefined ? { inputPerMTok: info.inputPerMTok } : {}),
+                ...(info.outputPerMTok !== undefined ? { outputPerMTok: info.outputPerMTok } : {}),
+              })),
+            );
           }
           return;
         }
@@ -279,6 +312,13 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       </Static>
 
       {streaming ? <Text>{streaming}</Text> : null}
+      {thinking && reasoningTail ? (
+        <Box flexDirection="column" marginBottom={0}>
+          <Text color="gray" dimColor>
+            {reasoningTail}
+          </Text>
+        </Box>
+      ) : null}
       {working && !permission ? (
         <Spinner label={thinking ? "thinking — Esc to interrupt" : "working — Esc to interrupt"} />
       ) : null}
@@ -332,7 +372,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color="cyan">Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            items={modelPicker.map((m) => ({ label: m.id, value: m.id }))}
+            items={modelPicker.map((m) => ({ label: formatModelLabel(m), value: m.id }))}
             onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
               setModelPicker(null);
@@ -348,7 +388,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
       <Box>
         <Text color="gray">
-          {modelId} · {stats.inTok} in / {stats.outTok} out
+          {modelId}
+          {ctxTokens > 0
+            ? ` · ctx ${fmtTokens(ctxTokens)}/${fmtTokens(modelInfo(modelId).contextWindow)} (${Math.round((ctxTokens / modelInfo(modelId).contextWindow) * 100)}%)`
+            : ""}
+          {" · "}
+          {fmtTokens(stats.inTok)} in / {fmtTokens(stats.outTok)} out
           {stats.cost > 0 ? ` · ~$${stats.cost.toFixed(4)}` : ""}
           {exitArmed ? " · press Ctrl+C again to exit" : ""}
         </Text>
