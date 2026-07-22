@@ -192,7 +192,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [denyReasonMode, setDenyReasonMode] = useState(false);
   const [modelPicker, setModelPicker] = useState<"loading" | DiscoveredModel[] | null>(null);
   const [sessionPicker, setSessionPicker] = useState<SessionSummary[] | null>(null);
-  const [helpMenu, setHelpMenu] = useState(false);
   const [connect, setConnect] = useState<ConnectState | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [question, setQuestion] = useState<{
@@ -602,9 +601,33 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       const [cmd, ...rest] = line.split(/\s+/);
       const arg = rest.join(" ");
       switch (cmd) {
-        case "/help":
-          setHelpMenu(true);
+        case "/help": {
+          const cmds = [
+            ...SLASH_COMMANDS,
+            ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: `(custom) ${c.description}` })),
+          ];
+          const pad = Math.max(...cmds.map((c) => c.name.length)) + 3;
+          pushItem(
+            "info",
+            [
+              `aerin v${VERSION} — open-source coding agent`,
+              "",
+              "Commands:",
+              ...cmds.map((c) => `  ${c.name.padEnd(pad)}${c.description}`),
+              "",
+              "Shortcuts:",
+              "  Esc          interrupt the agent · clear the input",
+              "  Esc Esc      edit your last message",
+              "  Shift+Tab    cycle mode: manual → accept edits → plan",
+              "  Tab          complete /commands and @file paths",
+              "  \\ + Enter    insert a newline (Alt+Enter too)",
+              "  PgUp/PgDn    scroll the transcript (mouse wheel works)",
+              "  @path        attach a file to your message",
+              "  Ctrl+C ×2    quit",
+            ].join("\n"),
+          );
           return;
+        }
         case "/clear": {
           await setup.agent.clear();
           setItems([]); // fully dynamic viewport — emptying state empties the screen
@@ -636,12 +659,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           const next: PermissionMode = setup.policy.inPlanMode ? "manual" : "plan";
           setup.policy.setMode(next);
           setMode(next);
-          pushItem(
-            "info",
-            next === "plan"
-              ? "(plan mode ON — write/execute tools are denied; the agent will explore and present a plan)"
-              : "(plan mode OFF — the agent can make changes again)",
-          );
           return;
         }
         case "/compact": {
@@ -761,18 +778,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // Global keys: Esc interrupts; Shift+Tab cycles modes; PgUp/PgDn scroll; double Ctrl+C exits.
   useInput((input, key) => {
     if (key.tab && key.shift) {
-      // manual → accept edits → plan → manual (Claude Code order)
+      // manual → accept edits → plan → manual (Claude Code order).
+      // The status-bar badge and input border announce the mode — no chat spam.
       const next: PermissionMode = mode === "manual" ? "accept" : mode === "accept" ? "plan" : "manual";
       setup.policy.setMode(next);
       setMode(next);
-      pushItem(
-        "info",
-        next === "manual"
-          ? "(mode: manual — edits and commands ask)"
-          : next === "accept"
-            ? "(mode: accept edits — file changes auto-approved, commands still ask)"
-            : "(mode: plan — read-only, the agent presents a plan)",
-      );
       return;
     }
     if (key.pageUp) {
@@ -820,7 +830,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // The input stays visible and typable even while the agent works — messages
   // submitted mid-turn are queued and sent when the turn finishes. Only modal
   // dialogs take the input away.
-  const inputActive = !permission && !modelPicker && !sessionPicker && !question && !helpMenu && !connect;
+  const inputActive = !permission && !modelPicker && !sessionPicker && !question && !connect;
 
   const allCommands = [
     ...SLASH_COMMANDS,
@@ -1147,27 +1157,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         </Box>
       ) : null}
 
-      {helpMenu ? (
-        <Box flexDirection="column" borderStyle="round" borderColor={C.accent} paddingX={1}>
-          <Text color={C.accent}>Commands — ↑/↓ to choose, Enter to run, Esc to close</Text>
-          <FilterSelect
-            active={true}
-            items={allCommands.map((c) => ({
-              label: `${c.name.padEnd(9)} ${c.description}`,
-              value: c.name,
-            }))}
-            onCancel={() => setHelpMenu(false)}
-            onSelect={(name) => {
-              setHelpMenu(false);
-              if (name !== "/help") runCommand(name);
-            }}
-          />
-          <Text color={C.dim}>
-            Esc interrupt/clear · Esc Esc edit last · Shift+Tab cycle manual/accept/plan · Ctrl+C twice exit
-          </Text>
-        </Box>
-      ) : null}
-
       {modelPicker === "loading" ? (
         <Text color={C.dim}>… fetching available models from your providers</Text>
       ) : null}
@@ -1254,7 +1243,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
               : ""}
           </Text>
-          {planMode ? <Text color={C.magenta}> · PLAN (shift+tab)</Text> : null}
+          {planMode ? <Text color={C.magenta}> · ⏸ plan (shift+tab)</Text> : null}
           {mode === "accept" ? <Text color={C.ok}> · ⏵⏵ accept edits (shift+tab)</Text> : null}
           {queued.length > 0 ? <Text color={C.warn}> · {queued.length} queued</Text> : null}
           {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}

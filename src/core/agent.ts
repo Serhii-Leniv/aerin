@@ -206,6 +206,7 @@ export class Agent {
     return Math.round(JSON.stringify(this.messages).length / 4);
   }
 
+
   /**
    * Request prompt fields. Non-Anthropic models get the plain `system` option.
    * Anthropic models get the system prompt as a message with cache breakpoints

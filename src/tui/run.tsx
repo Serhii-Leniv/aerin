@@ -136,9 +136,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     // in the normal terminal so the session survives in scrollback.
     printTranscript(setup.agent.history);
     await stopMcpServers(setup.mcpConnections);
-    // Piped-stdin runtimes can keep the loop alive after cleanup — the smoke
-    // harness needs a deterministic exit.
-    if (smoke) process.exit(0);
+    // index.ts force-exits after main() resolves — nothing left to do here.
   }
 }
 
