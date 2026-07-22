@@ -28,7 +28,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
+import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
 import { C } from "./theme.js";
@@ -358,7 +358,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     flushTimer.current = null;
     // Render markdown live while streaming — partial constructs (an unclosed
     // code fence, a half-typed **bold) degrade gracefully in marked-terminal.
-    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())));
+    // The ▌ cursor marks where new text lands.
+    setStreaming(withDot(renderMarkdown(streamBuf.current, mdWidth())) + "\x1b[38;2;0;242;254m▌\x1b[0m");
   }, []);
 
   const runTurn = useCallback(
@@ -431,6 +432,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               break;
             case "todo-update":
               setTodos(event.items);
+              break;
+            case "tool-display":
+              pushItem("info", colorizeDiff(event.text));
               break;
             case "retry":
               pushItem(

@@ -102,6 +102,29 @@ describe("pruneOldToolResults", () => {
   });
 });
 
+describe("edit diff display events", () => {
+  test("edit emits a display-only diff via onProgress", async () => {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { editTool } = await import("../src/tools/fs-tools.js");
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "aerin-diff-"));
+    await fs.writeFile(path.join(cwd, "a.txt"), "one\ntwo\nthree\n");
+    const events: import("../src/core/events.js").AgentEvent[] = [];
+    const out = await editTool.execute(
+      { path: "a.txt", old_string: "two", new_string: "TWO" },
+      { cwd, allowOutsideCwd: false, onProgress: (e) => events.push(e) },
+    );
+    expect(out).toContain("+1 -1 lines");
+    const display = events.find((e) => e.type === "tool-display");
+    expect(display?.type).toBe("tool-display");
+    if (display?.type === "tool-display") {
+      expect(display.text).toContain("-two");
+      expect(display.text).toContain("+TWO");
+    }
+  });
+});
+
 describe("assertSafePattern (ReDoS guard)", () => {
   test("rejects catastrophic shapes, allows normal regexes", async () => {
     const { assertSafePattern } = await import("../src/tools/search-tools.js");

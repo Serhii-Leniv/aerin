@@ -110,6 +110,7 @@ export const writeTool: ToolDef<z.ZodTypeAny> = {
       // new file
     }
     await fs.writeFile(abs, input.content, "utf8");
+    if (old !== undefined) emitDiff(ctx, input.path, old, input.content);
     if (old === undefined) return `Created ${input.path} (${input.content.split("\n").length} lines)`;
     return `Wrote ${input.path} (${diffStat(old, input.content)})`;
   },
@@ -143,9 +144,24 @@ export const editTool: ToolDef<z.ZodTypeAny> = {
     const raw = await fs.readFile(abs, "utf8");
     const updated = applyEdit(raw, input.old_string, input.new_string, input.replace_all ?? false);
     await fs.writeFile(abs, updated, "utf8");
+    emitDiff(ctx, input.path, raw, updated);
     return `Updated ${input.path} (${diffStat(raw, updated)})`;
   },
 };
+
+const MAX_DIFF_DISPLAY_LINES = 24;
+
+/** Send a compact diff to the UI (display-only; never enters model context). */
+function emitDiff(ctx: ToolContext, label: string, before: string, after: string): void {
+  if (!ctx.onProgress) return;
+  const patch = createTwoFilesPatch(label, label, before, after, "", "");
+  const lines = patch
+    .split("\n")
+    .filter((l) => !l.startsWith("===") && !l.startsWith("---") && !l.startsWith("+++") && l !== "\\ No newline at end of file");
+  const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
+  if (lines.length > MAX_DIFF_DISPLAY_LINES) shown.push(`… ${lines.length - MAX_DIFF_DISPLAY_LINES} more diff lines`);
+  ctx.onProgress({ type: "tool-display", text: shown.join("\n").trimEnd() });
+}
 
 /** "+A -R lines" between two file versions. */
 export function diffStat(before: string, after: string): string {

@@ -3,7 +3,7 @@ import { stdin, stdout, stderr } from "node:process";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { PermissionDecision, PermissionRequest } from "../core/events.js";
 import { SessionStore, type SessionSummary } from "../session/store.js";
-import { relativeTime } from "../terminal/format.js";
+import { colorizeDiff, relativeTime } from "../terminal/format.js";
 import { discoverModels, listProviderModels } from "../providers/list-models.js";
 import { resolveModel } from "../providers/registry.js";
 import { renderMarkdown } from "../terminal/markdown.js";
@@ -133,6 +133,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
                 `  └ agent ${event.status}: ${event.description} (${event.toolCalls} tools, ${event.inputTokens + event.outputTokens} tok)\n`,
               );
             }
+            break;
+          case "tool-display":
+            stdout.write(colorizeDiff(event.text) + "\n");
             break;
           case "todo-update":
             for (const t of event.items) {

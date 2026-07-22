@@ -22,6 +22,24 @@ export function setTerminalTitle(title: string): void {
   if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${title}\x07`);
 }
 
+/** Colorize a unified diff with ANSI (theme greens/reds), 2-space indented. */
+export function colorizeDiff(diff: string): string {
+  const color = process.stdout.isTTY === true || Boolean(process.env["FORCE_COLOR"]);
+  return diff
+    .split("\n")
+    .map((line) => {
+      const c = line.startsWith("+")
+        ? "38;2;80;250;123" // neon green
+        : line.startsWith("-")
+          ? "38;2;255;85;85" // hot red
+          : line.startsWith("@@")
+            ? "38;2;98;114;164"
+            : "38;2;98;114;164";
+      return color ? `  \x1b[${c}m${line}\x1b[0m` : `  ${line}`;
+    })
+    .join("\n");
+}
+
 /** "just now", "5m ago", "3h ago", "2d ago" — for session lists. */
 export function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

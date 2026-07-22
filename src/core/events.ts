@@ -29,6 +29,8 @@ export type AgentEvent =
     }
   | { type: "compaction"; preTokens: number }
   | { type: "todo-update"; items: { text: string; status: "pending" | "active" | "done" }[] }
+  /** Display-only detail for the UI (e.g. an edit's diff) — never sent to the model. */
+  | { type: "tool-display"; text: string }
   /** Intentional end-of-turn sentinel; frontends may ignore it (iteration ends anyway). */
   | { type: "turn-end" }
   | { type: "retry"; attempt: number; maxAttempts: number; message: string }

@@ -23,6 +23,13 @@ function ensure(width: number): Marked {
   if (instance && configuredWidth === width) return instance;
   configuredWidth = width;
   instance = new Marked();
+  const railed = (s: string) =>
+    s
+      .split("\n")
+      .map((l) => `${dim("│")} ${l.replace(/^ {4}/, "")}`)
+      .join("\n");
+  // OSC 8: clickable links in modern terminals (Windows Terminal, iTerm, ...).
+  const clickable = (href: string) => `\x1b]8;;${href}\x07${cyan(href)}\x1b]8;;\x07`;
   instance.use(
     markedTerminal({
       width,
@@ -32,10 +39,11 @@ function ensure(width: number): Marked {
       firstHeading: pink,
       heading: pink,
       link: cyan,
-      href: cyan,
+      href: colorEnabled ? clickable : (s: string) => s,
       blockquote: dim,
       hr: dim,
       codespan: yellow,
+      code: railed, // fenced blocks get a dim left rail instead of bare indent
     }) as Parameters<Marked["use"]>[0],
   );
   return instance;
