@@ -1,5 +1,6 @@
 import type { AerinConfig } from "../config/config.js";
 import { customProviders, resolveApiKey } from "./registry.js";
+import { catalogEntry } from "./catalog.js";
 import { MODEL_TABLE } from "./models.js";
 
 /**
@@ -18,6 +19,8 @@ export interface DiscoveredModel {
   /** USD per million tokens, when the provider's list API exposes it. */
   inputPerMTok?: number;
   outputPerMTok?: number;
+  /** Short annotation shown in the picker, e.g. "free tier". */
+  note?: string;
 }
 
 export interface DiscoveryResult {
@@ -160,6 +163,7 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
       try {
         const bare = await list(config);
         if (!bare) return; // no key / not running — silently skipped
+        const freeTier = catalogEntry(provider)?.freeTier === true;
         for (const m of bare) {
           const fullId = `${provider}/${m.id}`;
           const known = MODEL_TABLE[fullId];
@@ -170,6 +174,7 @@ export async function discoverModels(config: AerinConfig): Promise<DiscoveryResu
             contextWindow: m.contextWindow ?? known?.contextWindow,
             inputPerMTok: m.inputPerMTok ?? known?.inputPerMTok,
             outputPerMTok: m.outputPerMTok ?? known?.outputPerMTok,
+            ...(freeTier ? { note: "free tier" } : {}),
           });
         }
       } catch (err) {
@@ -191,6 +196,7 @@ export function formatModelLabel(m: DiscoveredModel, opts?: { stripProvider?: bo
   if (m.inputPerMTok !== undefined && m.outputPerMTok !== undefined) {
     parts.push(m.inputPerMTok === 0 && m.outputPerMTok === 0 ? "free" : `$${trim(m.inputPerMTok)}/$${trim(m.outputPerMTok)}`);
   }
+  if (m.note) parts.push(m.note);
   return parts.join("  ·  ");
 }
 
