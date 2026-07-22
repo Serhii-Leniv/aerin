@@ -1,5 +1,8 @@
 # Aerin
 
+[![CI](https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml/badge.svg)](https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/aerin-agent)](https://www.npmjs.com/package/aerin-agent)
+
 An open-source CLI coding agent — in the spirit of Claude Code and opencode, small enough to read in an afternoon.
 
 - **Any model, any provider**: Anthropic, OpenAI, Google, OpenRouter (300+ models), and local Ollama via the [Vercel AI SDK](https://ai-sdk.dev). Bring your own API key. `/model` shows a live, filterable list of what your keys can actually access — nothing is hardcoded.

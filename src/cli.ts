@@ -11,8 +11,7 @@ import { SessionStore } from "./session/store.js";
 import { startMcpServers, stopMcpServers, type McpConnection } from "./mcp/manager.js";
 import { runPrint } from "./modes/print.js";
 import { runRepl } from "./modes/repl.js";
-
-const VERSION = "0.0.1";
+import { VERSION } from "./version.js";
 
 interface CliFlags {
   model?: string;

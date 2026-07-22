@@ -6,6 +6,7 @@ import type { z } from "zod";
 import type { McpServerConfig } from "../config/config.js";
 import type { ToolDef } from "../tools/types.js";
 import { truncateOutput } from "../tools/types.js";
+import { VERSION } from "../version.js";
 
 const CONNECT_TIMEOUT_MS = 15_000;
 
@@ -50,7 +51,7 @@ export async function startMcpServers(
   await Promise.all(
     Object.entries(servers).map(async ([name, cfg]) => {
       try {
-        const client = new Client({ name: "aerin", version: "0.0.1" });
+        const client = new Client({ name: "aerin", version: VERSION });
         const transport =
           "url" in cfg
             ? new StreamableHTTPClientTransport(new URL(cfg.url), {

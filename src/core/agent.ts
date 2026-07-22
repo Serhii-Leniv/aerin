@@ -101,6 +101,9 @@ export class Agent {
           messages: this.messages,
           tools: this.buildToolSet(),
           abortSignal: abort.signal,
+          // Errors surface through our event stream; without this the SDK
+          // also dumps the raw error object to the console.
+          onError: () => {},
         });
 
         const toolCalls: { toolCallId: string; toolName: string; input: unknown }[] = [];
