@@ -121,16 +121,15 @@ const SLASH_COMMANDS = [
   { name: "/exit", description: "quit aerin" },
 ] as const;
 
-/** Block-character wordmark shown in the startup banner (28 cols × 4 rows). */
+/** Block-character wordmark shown in the startup banner (33 cols × 5 rows). */
 const LOGO = [
-  "▄▀▀▀▄ █▀▀▀▀ █▀▀▀▄ ▀█▀ █▄   █",
-  "█▄▄▄█ █▄▄▄  █▄▄▄▀  █  █ ▀▄ █",
-  "█   █ █     █  ▀▄  █  █   ▀█",
-  "▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀ ▀    ▀",
+  " ▄██▄  ██████ █████▄ ████ ██▄  ██",
+  "██  ██ ██     ██  ██  ██  ███▄ ██",
+  "██████ █████  █████▀  ██  ██▀█▄██",
+  "██  ██ ██     ██ ▀█▄  ██  ██ ▀███",
+  "██  ██ ██████ ██  ██ ████ ██  ▀██",
 ] as const;
-/** Gradient, top to bottom. */
-const LOGO_COLORS = [C.accentBright, C.accentBright, C.accent, C.accent] as const;
-const MIN_LOGO_COLUMNS = 38;
+const MIN_LOGO_COLUMNS = 40;
 
 /** "⏺ " on the first line, aligned indent on the rest — Claude Code-style blocks. */
 function withDot(text: string): string {
@@ -783,12 +782,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       <Box flexDirection="column" flexShrink={0} paddingX={1}>
         {showLogo ? (
           LOGO.map((row, i) => (
-            <Text key={i} bold color={LOGO_COLORS[i] ?? C.accent}>
+            <Text key={i} bold color={C.accentBright}>
               {row}
             </Text>
           ))
         ) : (
-          <Text color={C.accent} bold>
+          <Text color={C.accentBright} bold>
             ✦ Aerin
           </Text>
         )}
