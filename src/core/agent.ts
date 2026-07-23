@@ -584,10 +584,13 @@ export class Agent {
     const target = targetFor(call.toolName, input);
     const policyDecision = this.opts.policy.decide(def.permission, target);
     if (policyDecision === "deny") {
+      const denyRule = this.opts.policy.deniedBy(target);
       return {
-        output:
-          "Plan mode is active: only read-only tools are allowed. Investigate with read/grep/glob/agent, " +
-          "then present a numbered step-by-step plan and stop — the user approves by turning plan mode off (/plan).",
+        output: denyRule
+          ? `Denied by permission rule ${denyRule} (permissions.deny in settings). ` +
+            "Do not retry or work around this — use a different approach, or ask the user to change the rule."
+          : "Plan mode is active: only read-only tools are allowed. Investigate with read/grep/glob/agent, " +
+            "then present a numbered step-by-step plan and stop — the user approves by turning plan mode off (/plan).",
         isError: true,
       };
     }

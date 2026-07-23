@@ -30,7 +30,13 @@ export const configSchema = z.object({
   hooks: z.record(z.string()).optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
-  permissions: z.object({ allow: z.array(z.string()).default([]) }).optional(),
+  permissions: z
+    .object({
+      allow: z.array(z.string()).default([]),
+      /** Same rule syntax; beats allow rules, accept mode and --yolo. */
+      deny: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 
 export type AerinConfig = z.infer<typeof configSchema>;
@@ -71,6 +77,10 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
       allow: [
         ...(globalConfig.permissions?.allow ?? []),
         ...(projectConfig.permissions?.allow ?? []),
+      ],
+      deny: [
+        ...(globalConfig.permissions?.deny ?? []),
+        ...(projectConfig.permissions?.deny ?? []),
       ],
     },
   };

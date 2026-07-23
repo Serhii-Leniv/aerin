@@ -136,7 +136,7 @@ export async function setupAgent(
     )
     .catch(() => {});
 
-  const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo);
+  const policy = new PermissionPolicy(config.permissions?.allow ?? [], flags.yolo, config.permissions?.deny ?? []);
   const skills = await discoverSkills(cwd);
   const customCommands = await discoverCommands(cwd);
   const { discoverAgents } = await import("./core/agents.js");

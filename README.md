@@ -16,7 +16,7 @@ An open-source CLI coding agent — in the spirit of Claude Code and opencode, s
 - **Plan mode**: `/plan` makes the agent read-only — it explores, presents a numbered plan, and nothing is written or executed until you toggle back (even under `--yolo`).
 - **Task list & clarifying questions**: a live todo checklist in the TUI, and the model can ask you one multiple-choice question when genuinely blocked.
 - **Auto-memory**: durable project facts saved to `AGENTS.md` (`## Memory`) with your approval, loaded into every future session; `AGENTS.md` / `CLAUDE.md` instructions are injected into the system prompt, along with your git branch/status.
-- **Permission gate**: every write and command asks first, with colored diff previews. Approve once, or persist an allow-rule per project.
+- **Permission gate**: every write and command asks first, with colored diff previews. Approve once, persist an allow-rule per project, or hard-block actions with deny rules that even `--yolo` can't cross.
 - **Sessions**: JSONL history per directory with human titles — `--continue`, `--resume <id>`, or `/resume` for a picker that replays the conversation — plus automatic context compaction, stale tool-output pruning, and a live context/cost meter.
 - **Reliability**: transient provider errors retry with backoff (daily quotas fail fast); Anthropic prompt caching cuts input cost on every agentic iteration.
 - **MCP client**: paste your existing `mcpServers` config (stdio and HTTP servers) and their tools appear in the agent.
@@ -71,7 +71,8 @@ Global: `~/.config/aerin/config.json` (platform-appropriate). Per-project: `.aer
     "remote": { "url": "https://example.com/mcp" }
   },
   "permissions": {
-    "allow": ["bash(git *)", "write(src/*)", "mcp__github__*"]
+    "allow": ["bash(git *)", "write(src/*)", "mcp__github__*"],
+    "deny": ["bash(rm *)", "write(.env*)", "edit(.env*)"]
   }
 }
 ```
@@ -91,6 +92,8 @@ Three tiers: reads are always allowed; writes and commands ask. Rules are simple
 | `mcp__github__*` | all tools from the github MCP server |
 
 Choosing **"Yes, always for this project"** in a prompt appends a rule to `.aerin/settings.json`. `--yolo` skips all prompts (use with care).
+
+A `deny` list uses the same syntax and beats everything — allow rules, accept mode, even `--yolo`. Denies also apply to read-tier tools (`"read(*.pem*)"`), and bash denies are matched against each segment of chained commands, so `bash(rm *)` catches `git pull && rm -rf x`. The agent is told which rule blocked it and not to work around it.
 
 ## Development
 

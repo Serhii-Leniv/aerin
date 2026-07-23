@@ -10,6 +10,11 @@ import type { PermissionTier } from "../tools/types.js";
  *   mcp__github__*
  * Deliberately NOT a policy language — prefix matching covers 95% of cases
  * and stays auditable.
+ *
+ * A separate deny list uses the same syntax and beats EVERYTHING — allow
+ * rules, accept mode, --yolo, even read-tier (so `read(*.pem)` works).
+ * For bash, deny patterns are also tried against each segment of a chained
+ * command, so `bash(rm *)` catches `git pull && rm -rf x`.
  */
 
 export type Decision = "allow" | "ask" | "deny";
@@ -58,7 +63,31 @@ export class PermissionPolicy {
   constructor(
     private projectRules: string[],
     private yolo: boolean,
+    private denyRules: string[] = [],
   ) {}
+
+  /** The deny rule matching this call, if any. Bash also matches per chained segment. */
+  deniedBy(t: RuleTarget): string | undefined {
+    if (this.denyRules.length === 0) return undefined;
+    // Over-splitting (parens, backticks) only produces extra segments to test —
+    // fine for a deny scan, where a false positive is a blocked call, not a breach.
+    const targets =
+      t.tool === "bash"
+        ? [
+            t.target,
+            ...t.target
+              .split(/[;&|`$()]+/)
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0),
+          ]
+        : [t.target];
+    for (const rule of this.denyRules) {
+      for (const target of targets) {
+        if (ruleMatches(rule, { tool: t.tool, target })) return rule;
+      }
+    }
+    return undefined;
+  }
 
   setMode(mode: PermissionMode): void {
     this.mode = mode;
@@ -78,6 +107,7 @@ export class PermissionPolicy {
   }
 
   decide(tier: PermissionTier, t: RuleTarget): Decision {
+    if (this.deniedBy(t)) return "deny";
     if (tier === "read") return "allow";
     if (this.mode === "plan") return "deny";
     if (this.yolo) return "allow";
