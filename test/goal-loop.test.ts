@@ -127,6 +127,17 @@ describe("/goal autonomous loop", () => {
     expect(events.some((e) => e.type === "goal-check")).toBe(false);
   });
 
+  test("/clear drops the goal and disarms the loop — a cleared session is a fresh start", async () => {
+    const judge = seqGenModel(['{"done": false, "reason": "x"}']);
+    const agent = goalAgent([{ text: "t" }], judge, 5);
+    agent.startGoal("some goal");
+    await agent.clear();
+    expect(agent.currentGoal).toBeUndefined();
+    const events: AgentEvent[] = [];
+    for await (const e of agent.send("hi")) events.push(e);
+    expect(events.some((e) => e.type === "goal-check")).toBe(false);
+  });
+
   test("/goal clear disarms the loop", async () => {
     const judge = seqGenModel(['{"done": false, "reason": "x"}']);
     const agent = goalAgent([{ text: "t" }], judge, 5);

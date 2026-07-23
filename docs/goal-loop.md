@@ -12,5 +12,5 @@ Source: `src/core/goal-judge.ts` + the finished-turn branch in `src/core/agent.t
 ## Mechanics
 - The loop lives inside `Agent.send()`, so the TUI, REPL, and headless mode all get it with no frontend-specific logic; frontends only render the `goal-check` event.
 - The judge runs on the cheaper `subagentModel` when configured (`AgentOptions.getJudgeModel`), else the active model.
-- Achieved goals disarm and unpin themselves; user messages always preempt (interrupt aborts the turn, the goal stays armed until cleared).
+- Achieved goals disarm and unpin themselves; user messages always preempt (interrupt aborts the turn, the goal stays armed until cleared). `/clear` also drops the goal — a cleared session is a fresh start.
 - While a goal is armed, ANY finished turn is judged — asking the agent something unrelated mid-goal will pull it back toward the goal afterward. That is the design; `/goal clear` if you want a plain conversation.

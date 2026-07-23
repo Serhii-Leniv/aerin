@@ -255,7 +255,9 @@ export class Agent {
 
   async clear(): Promise<void> {
     this.messages = [];
-    // A cleared session is a fresh start — the cost/token meter resets with it.
+    // A cleared session is a fresh start — the cost/token meter resets with
+    // it, and so does the goal (clearing also disarms the goal loop).
+    this.setGoal(undefined);
     this.lastInputTokens = 0;
     this.totalInputTokens = 0;
     this.totalOutputTokens = 0;

@@ -695,6 +695,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           setCtxTokens(0);
           setStats({ inTok: 0, outTok: 0, cost: 0 });
           setTodos([]);
+          setGoalSet(false); // agent.clear() dropped the goal — sync the indicator
           return;
         }
         case "/undo":
