@@ -29,7 +29,9 @@ export const configSchema = z.object({
   /**
    * Shell hooks: {"pre:bash": "...", "post:edit": "bun run typecheck", "post:*": "..."}.
    * Exit-code semantics by default; print a JSON object to use the structured
-   * protocol (pre: {"decision","reason","input"}, post: {"context"}) — see core/hooks.ts.
+   * protocol (pre: {"decision","reason","input"}, post: {"context"}). Lifecycle
+   * keys use the same map: session:start, prompt:submit, turn:end, compact:pre,
+   * session:end — see core/hooks.ts and docs/hooks.md.
    */
   hooks: z.record(z.string()).optional(),
   /** Post-edit check command; false disables (default: auto-detect a "typecheck" script). */

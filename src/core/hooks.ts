@@ -75,6 +75,45 @@ export async function runPreHook(command: string, toolName: string, input: unkno
   return { decision: "none" };
 }
 
+/**
+ * Lifecycle events, config keys alongside the tool hooks:
+ *   "session:start"  — after setup; JSON {"context"} is appended to the system prompt
+ *   "prompt:submit"  — before each user prompt; {"decision":"block","reason"} stops it,
+ *                      {"context"} is appended to the prompt
+ *   "turn:end"       — when a turn finishes; {"decision":"block","reason"} makes the
+ *                      agent keep working (capped at 3 per turn)
+ *   "compact:pre"    — before compaction (observational)
+ *   "session:end"    — on shutdown (observational)
+ * Non-JSON output is ignored — lifecycle hooks are observational unless they
+ * speak the JSON protocol. Each receives the payload on stdin plus AERIN_TOOL
+ * set to the event name.
+ */
+export interface LifecycleResult {
+  context?: string;
+  blockReason?: string;
+}
+
+export async function runLifecycleHook(
+  hooks: Record<string, string> | undefined,
+  event: string,
+  payload: Record<string, unknown>,
+  cwd: string,
+): Promise<LifecycleResult | undefined> {
+  const cmd = hooks?.[event];
+  if (!cmd) return undefined;
+  const r = await runHook(cmd, event, payload, cwd, { event });
+  const j = parseHookJson(r.output);
+  if (!j) return {};
+  return {
+    ...(typeof j["context"] === "string" && j["context"].trim()
+      ? { context: j["context"].trim().slice(0, 2_000) }
+      : {}),
+    ...(j["decision"] === "block" || j["decision"] === "deny"
+      ? { blockReason: typeof j["reason"] === "string" && j["reason"].trim() ? j["reason"].trim() : "blocked by hook" }
+      : {}),
+  };
+}
+
 export async function runPostHook(
   command: string,
   toolName: string,

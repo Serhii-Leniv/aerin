@@ -155,7 +155,7 @@ export async function setupAgent(
   const customCommands = await discoverCommands(cwd);
   const { discoverAgents } = await import("./core/agents.js");
   const namedAgents = await discoverAgents(cwd);
-  const systemPrompt = await buildSystemPrompt(cwd, modelId, skills, namedAgents);
+  let systemPrompt = await buildSystemPrompt(cwd, modelId, skills, namedAgents);
   if (skills.length > 0) tools.push(createSkillTool(skills));
 
   let store: SessionStore;
@@ -178,6 +178,18 @@ export async function setupAgent(
   }
   // Needs the live session id so search never surfaces the conversation it is part of.
   tools.push(createSessionSearchTool({ currentSessionId: store.id }));
+
+  // session:start lifecycle hook — its JSON {"context"} joins the system prompt.
+  if (config.hooks?.["session:start"]) {
+    const { runLifecycleHook } = await import("./core/hooks.js");
+    const r = await runLifecycleHook(
+      config.hooks,
+      "session:start",
+      { sessionId: store.id, model: modelId, resumed: Boolean(flags.resume || flags.continue) },
+      cwd,
+    );
+    if (r?.context) systemPrompt += `\n\nContext from the session:start hook:\n${r.context}`;
+  }
 
   const { resolveDiagnosticsCommand } = await import("./core/diagnostics.js");
   const diagnosticsCmd = await resolveDiagnosticsCommand(cwd, {

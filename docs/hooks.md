@@ -16,6 +16,19 @@ Config `hooks` maps `"pre:<tool>"` / `"post:<tool>"` (or `"pre:*"` / `"post:*"`)
 - Permission **deny rules always beat hooks**.
 - Rewritten input is re-validated against the tool's schema **and** re-checked against the policy — a hook cannot redirect a write into a denied path.
 
+## Lifecycle events
+Beyond per-tool hooks, five lifecycle keys use the same config map and JSON protocol:
+
+| Key | When | JSON effect |
+|---|---|---|
+| `session:start` | after setup (payload: sessionId, model, resumed) | `{"context"}` appended to the system prompt |
+| `prompt:submit` | before each user prompt | `{"decision":"block","reason"}` vetoes it; `{"context"}` rides along with the prompt |
+| `turn:end` | when a turn finishes (payload: response tail) | `{"decision":"block","reason"}` sends the agent back to work — capped at 3 per turn so an always-blocking hook can't trap it |
+| `compact:pre` | before compaction (payload: preTokens) | observational |
+| `session:end` | on shutdown (payload: sessionId, message count) | observational |
+
+Lifecycle hooks are observational unless they speak JSON — plain output and exit codes are ignored. Each receives its payload on stdin with `AERIN_TOOL` set to the event name. `turn:end` is the custom stop-gate: a script that runs the test suite and blocks with "tests were not run" turns any turn into verified work.
+
 Example — auto-approve doc edits, freeze migrations:
 
 ```json

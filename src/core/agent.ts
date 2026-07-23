@@ -9,7 +9,7 @@ import { modelFamilyGuidance } from "./system-prompt.js";
 import { judgeGoal } from "./goal-judge.js";
 import { Checkpoints } from "./checkpoints.js";
 import { ShadowGit } from "./shadow-git.js";
-import { hookFor, runHook, runPreHook, runPostHook } from "./hooks.js";
+import { hookFor, runHook, runPreHook, runPostHook, runLifecycleHook } from "./hooks.js";
 import path from "node:path";
 import type { SessionStore } from "../session/store.js";
 
@@ -360,6 +360,15 @@ export class Agent {
   }
 
   async compactNow(): Promise<void> {
+    // compact:pre lifecycle hook — observational (logging, snapshots).
+    if (this.opts.hooks?.["compact:pre"]) {
+      await runLifecycleHook(
+        this.opts.hooks,
+        "compact:pre",
+        { preTokens: this.lastInputTokens, messages: this.messages.length },
+        this.opts.cwd,
+      );
+    }
     // Active model: while failed over, the primary can't serve the summary call either.
     this.messages = await compact(this.activeModel, this.activeModelId, this.messages);
     await this.opts.store?.rewrite(this.messages);
@@ -421,6 +430,17 @@ export class Agent {
     this.failover = undefined;
     this.failoverIndex = 0;
     this.turnToolCalls.length = 0; // doom-loop tracking is per turn
+
+    // prompt:submit lifecycle hook — can veto the prompt or enrich it.
+    if (this.opts.hooks?.["prompt:submit"]) {
+      const r = await runLifecycleHook(this.opts.hooks, "prompt:submit", { prompt: input }, this.opts.cwd);
+      if (r?.blockReason) {
+        yield { type: "error", message: `Prompt blocked by prompt:submit hook: ${r.blockReason}` };
+        return;
+      }
+      if (r?.context) input = `${input}\n\n[context from prompt:submit hook]\n${r.context}`;
+    }
+
     const newMessages: ModelMessage[] = [];
     const userMessage: ModelMessage =
       images && images.length > 0
@@ -447,6 +467,7 @@ export class Agent {
     try {
       const maxIterations = this.opts.maxIterations ?? MAX_ITERATIONS;
       let finished = false;
+      let turnEndBlocks = 0; // the turn:end hook can demand more work, at most 3× per turn
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         if (shouldCompact(this.activeModelId, this.lastInputTokens)) {
           const pre = this.lastInputTokens;
@@ -607,6 +628,29 @@ export class Agent {
               this.messages.push(m);
               newMessages.push(m);
               iteration = -1; // fresh tool-iteration budget for the next goal turn
+              continue;
+            }
+          }
+          // turn:end lifecycle hook — a JSON block verdict sends the agent
+          // back to work (e.g. "tests were not run"). Hard-capped so a hook
+          // that always blocks cannot trap the turn forever.
+          if (this.opts.hooks?.["turn:end"] && turnEndBlocks < 3) {
+            const r = await runLifecycleHook(
+              this.opts.hooks,
+              "turn:end",
+              { response: turnText.slice(-4000) },
+              this.opts.cwd,
+            );
+            if (r?.blockReason && !abort.signal.aborted) {
+              turnEndBlocks++;
+              yield { type: "tool-display", text: `(turn:end hook: ${r.blockReason} — continuing)` };
+              const m: ModelMessage = {
+                role: "user",
+                content: `[turn:end hook] Your turn was rejected: ${r.blockReason}\nAddress this before finishing.`,
+              };
+              this.messages.push(m);
+              newMessages.push(m);
+              iteration = -1;
               continue;
             }
           }

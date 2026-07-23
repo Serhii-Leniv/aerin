@@ -146,6 +146,13 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     // The alt screen took the conversation with it — leave a plain transcript
     // in the normal terminal so the session survives in scrollback.
     printTranscript(setup.agent.history);
+    const { runLifecycleHook } = await import("../core/hooks.js");
+    await runLifecycleHook(
+      setup.config.hooks,
+      "session:end",
+      { sessionId: setup.sessionId, messages: setup.agent.history.length },
+      setup.cwd,
+    );
     await stopMcpServers(setup.mcpConnections);
     // index.ts force-exits after main() resolves — nothing left to do here.
   }

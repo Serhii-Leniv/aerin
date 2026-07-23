@@ -330,6 +330,13 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
     }
   } finally {
     rl.close();
+    const { runLifecycleHook } = await import("../core/hooks.js");
+    await runLifecycleHook(
+      setup.config.hooks,
+      "session:end",
+      { sessionId: setup.sessionId, messages: setup.agent.history.length },
+      setup.cwd,
+    );
     await stopMcpServers(setup.mcpConnections);
   }
 }
