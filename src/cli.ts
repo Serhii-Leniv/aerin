@@ -191,6 +191,11 @@ export async function setupAgent(
         : {}),
       namedAgents,
       resolveModelFn: (id) => resolveModel(id, config),
+      // Workers act under the parent's policy, prompt the same user, and
+      // write into the parent turn's shadow snapshot so /undo covers them.
+      policy,
+      onPermission,
+      getShadow: () => agent.ensureShadow(),
     }),
   );
   // Only offer the question tool when someone can actually answer — in

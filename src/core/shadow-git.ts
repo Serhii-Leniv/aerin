@@ -31,6 +31,8 @@ export class ShadowGit {
   private redoTrees: string[] = [];
   private needSnapshot = true;
   private broken = false;
+  /** Dedupe concurrent callers (parallel worker sub-agents) onto one snapshot. */
+  private snapshotInFlight: Promise<void> | undefined;
   private static readonly MAX_TURNS = 20;
   private static readonly GIT_TIMEOUT_MS = 60_000;
 
@@ -57,16 +59,22 @@ export class ShadowGit {
 
   /** Snapshot the work tree once per turn, before its first state-changing tool. */
   async snapshotIfNeeded(): Promise<void> {
+    if (this.snapshotInFlight) return this.snapshotInFlight;
     if (this.broken || !this.needSnapshot) return;
     this.needSnapshot = false; // even on failure, don't retry every tool call
-    try {
-      const tree = await this.writeTree();
-      this.turns.push(tree);
-      while (this.turns.length > ShadowGit.MAX_TURNS) this.turns.shift();
-      this.redoTrees.length = 0; // new changes invalidate the redo chain
-    } catch {
-      this.broken = true;
-    }
+    this.snapshotInFlight = (async () => {
+      try {
+        const tree = await this.writeTree();
+        this.turns.push(tree);
+        while (this.turns.length > ShadowGit.MAX_TURNS) this.turns.shift();
+        this.redoTrees.length = 0; // new changes invalidate the redo chain
+      } catch {
+        this.broken = true;
+      }
+    })().finally(() => {
+      this.snapshotInFlight = undefined;
+    });
+    return this.snapshotInFlight;
   }
 
   /**

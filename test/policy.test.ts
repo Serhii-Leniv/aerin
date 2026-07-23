@@ -108,4 +108,15 @@ describe("targetFor", () => {
   test("write uses path", () => {
     expect(targetFor("write", { path: "a.txt", content: "x" })).toEqual({ tool: "write", target: "a.txt" });
   });
+  test("agent uses named agent, falling back to mode", () => {
+    expect(targetFor("agent", { agent: "fixer", mode: "worker" })).toEqual({ tool: "agent", target: "fixer" });
+    expect(targetFor("agent", { mode: "worker" })).toEqual({ tool: "agent", target: "worker" });
+    expect(targetFor("agent", {})).toEqual({ tool: "agent", target: "" });
+  });
+  test("deny rules can block spawning workers or specific named agents", () => {
+    const p = new PermissionPolicy([], true, ["agent(worker)", "agent(deploy-*)"]);
+    expect(p.decide("read", targetFor("agent", { mode: "worker" }))).toBe("deny");
+    expect(p.decide("read", targetFor("agent", { agent: "deploy-bot" }))).toBe("deny");
+    expect(p.decide("read", targetFor("agent", {}))).toBe("allow"); // plain research unaffected
+  });
 });

@@ -9,8 +9,9 @@ import { GLOBAL_CONFIG_DIR } from "../config/paths.js";
  *   <cwd>/.aerin/agents/<name>.md
  *   <cwd>/.claude/agents/<name>.md   (compatibility with Claude Code)
  *   <global config dir>/agents/<name>.md
- * All named agents run with the same read-only toolset as the default
- * researcher — the definition shapes behavior, never privileges.
+ * Named agents run read-only like the default researcher unless their
+ * frontmatter opts in with `mode: worker` — then they get write/edit/bash,
+ * still gated by the user's permission rules.
  */
 
 export interface NamedAgent {
@@ -18,6 +19,8 @@ export interface NamedAgent {
   description: string;
   /** Optional "provider/model-id" override for this agent. */
   model?: string;
+  /** "worker" grants the write-capable toolset; anything else is read-only research. */
+  mode?: "worker";
   systemPrompt: string;
 }
 
@@ -50,6 +53,7 @@ async function scanDir(root: string, agents: Map<string, NamedAgent>): Promise<v
         name,
         description: meta["description"] ?? "(no description)",
         ...(meta["model"] ? { model: meta["model"] } : {}),
+        ...(meta["mode"] === "worker" ? { mode: "worker" as const } : {}),
         systemPrompt: body,
       });
     } catch {

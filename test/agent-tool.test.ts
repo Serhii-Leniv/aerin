@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentEvent } from "../src/core/events.js";
-import { createAgentTool, subagentTools } from "../src/tools/agent-tool.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import type { AgentEvent, PermissionRequest } from "../src/core/events.js";
+import { createAgentTool, subagentTools, workerTools } from "../src/tools/agent-tool.js";
+import { PermissionPolicy } from "../src/permissions/policy.js";
+import { discoverAgents } from "../src/core/agents.js";
 import { mockModel } from "./mock-model.js";
 
 describe("subagentTools", () => {
@@ -11,6 +16,13 @@ describe("subagentTools", () => {
 
   test("every sub-agent tool is read-tier", () => {
     for (const t of subagentTools()) expect(t.permission).toBe("read");
+  });
+});
+
+describe("workerTools", () => {
+  test("adds write/edit/bash to the research set but still no agent tool", () => {
+    const names = workerTools().map((t) => t.name).sort();
+    expect(names).toEqual(["bash", "edit", "glob", "grep", "ls", "read", "webfetch", "websearch", "write"]);
   });
 });
 
@@ -63,6 +75,97 @@ describe("agent tool", () => {
     );
     expect(overrideUsed).toBe(true);
     expect(output).toBe("cheap");
+  });
+
+  test("worker mode writes files through the parent's permission gate, with a labeled ask", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "aerin-worker-"));
+    const asks: PermissionRequest[] = [];
+    const tool = createAgentTool({
+      getModel: () => ({
+        model: mockModel([
+          { toolCalls: [{ toolCallId: "w1", toolName: "write", input: { path: "out.txt", content: "hello" } }] },
+          { text: "WORKER REPORT" },
+        ]),
+        modelId: "mock/mock",
+      }),
+      policy: new PermissionPolicy([], false),
+      onPermission: async (req) => {
+        asks.push(req);
+        return { kind: "allow" };
+      },
+      getShadow: async () => null, // tests must not touch the real shadow data dir
+    });
+
+    const output = await tool.execute(
+      { description: "write greeting", prompt: "create out.txt", mode: "worker" },
+      { cwd, allowOutsideCwd: false },
+    );
+    expect(output).toBe("WORKER REPORT");
+    expect(await fs.readFile(path.join(cwd, "out.txt"), "utf8")).toBe("hello");
+    expect(asks).toHaveLength(1);
+    expect(asks[0]?.summary).toContain("[write greeting]");
+  });
+
+  test("worker mode respects a user denial and reports instead of writing", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "aerin-worker-"));
+    const tool = createAgentTool({
+      getModel: () => ({
+        model: mockModel([
+          { toolCalls: [{ toolCallId: "w1", toolName: "write", input: { path: "out.txt", content: "hello" } }] },
+          { text: "BLOCKED REPORT" },
+        ]),
+        modelId: "mock/mock",
+      }),
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "deny", reason: "not this file" }),
+      getShadow: async () => null,
+    });
+
+    const output = await tool.execute(
+      { description: "write greeting", prompt: "create out.txt", mode: "worker" },
+      { cwd, allowOutsideCwd: false },
+    );
+    expect(output).toBe("BLOCKED REPORT");
+    expect(fs.access(path.join(cwd, "out.txt"))).rejects.toThrow();
+  });
+
+  test("research mode has no write tool even if the model tries to call it", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "aerin-worker-"));
+    const tool = createAgentTool({
+      getModel: () => ({
+        model: mockModel([
+          { toolCalls: [{ toolCallId: "w1", toolName: "write", input: { path: "out.txt", content: "x" } }] },
+          { text: "RESEARCH REPORT" },
+        ]),
+        modelId: "mock/mock",
+      }),
+      policy: new PermissionPolicy([], false),
+      onPermission: async () => ({ kind: "allow" }),
+      getShadow: async () => null,
+    });
+
+    const output = await tool.execute(
+      { description: "just research", prompt: "look around" },
+      { cwd, allowOutsideCwd: false },
+    );
+    expect(output).toBe("RESEARCH REPORT");
+    expect(fs.access(path.join(cwd, "out.txt"))).rejects.toThrow(); // unknown tool, nothing written
+  });
+
+  test("named agents opt into worker mode via frontmatter", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "aerin-agents-"));
+    await fs.mkdir(path.join(cwd, ".aerin", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, ".aerin", "agents", "fixer.md"),
+      "---\nname: fixer\ndescription: fixes things\nmode: worker\n---\nYou fix things.\n",
+    );
+    await fs.writeFile(
+      path.join(cwd, ".aerin", "agents", "scout.md"),
+      "---\nname: scout\ndescription: reads things\n---\nYou read things.\n",
+    );
+    const agents = await discoverAgents(cwd);
+    expect(agents.find((a) => a.name === "fixer")?.mode).toBe("worker");
+    expect(agents.find((a) => a.name === "scout")?.mode).toBeUndefined();
   });
 
   test("throws when the sub-agent errors without producing a report", async () => {

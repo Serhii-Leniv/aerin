@@ -140,6 +140,9 @@ export class PermissionPolicy {
 export function targetFor(toolName: string, input: unknown): RuleTarget {
   const obj = (input ?? {}) as Record<string, unknown>;
   if (toolName === "bash") return { tool: toolName, target: String(obj["command"] ?? "") };
+  // Sub-agent spawns match on the named agent (or bare mode), so deny rules
+  // like agent(worker) or agent(deploy-bot) control who may be spawned.
+  if (toolName === "agent") return { tool: toolName, target: String(obj["agent"] ?? obj["mode"] ?? "") };
   if (typeof obj["path"] === "string") return { tool: toolName, target: obj["path"] };
   return { tool: toolName, target: "" };
 }

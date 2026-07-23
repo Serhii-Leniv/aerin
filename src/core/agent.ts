@@ -140,6 +140,12 @@ export interface AgentOptions {
   maxIterations?: number;
   /** Shell hooks keyed "pre:<tool>"/"post:<tool>" (or "pre:*"/"post:*"). */
   hooks?: Record<string, string>;
+  /**
+   * Worker sub-agents share the PARENT's shadow-git via this hook instead of
+   * creating their own (two instances on one shadow index would race, and the
+   * parent's per-turn snapshot must cover worker writes for /undo).
+   */
+  getShadow?: () => Promise<ShadowGit | null>;
 }
 
 export class Agent {
@@ -201,6 +207,16 @@ export class Agent {
   loadSession(store: SessionStore, messages: ModelMessage[]): void {
     this.opts.store = store;
     this.messages = [...messages];
+  }
+
+  /**
+   * The shadow-git instance for this agent's cwd — own (lazily created) for
+   * the main agent, the parent's for worker sub-agents. null = git unusable.
+   */
+  async ensureShadow(): Promise<ShadowGit | null> {
+    if (this.opts.getShadow) return this.opts.getShadow();
+    if (this.shadow === undefined) this.shadow = await ShadowGit.create(this.opts.cwd);
+    return this.shadow;
   }
 
   /** Undo the file changes of the most recent turn that changed anything. */
@@ -638,9 +654,9 @@ export class Agent {
     // snapshot runs before write AND execute tools, so bash/MCP side effects
     // are covered; without git we fall back to per-file capture on write tools.
     if (def.permission !== "read") {
-      if (this.shadow === undefined) this.shadow = await ShadowGit.create(this.opts.cwd);
-      if (this.shadow) {
-        await this.shadow.snapshotIfNeeded();
+      const shadow = await this.ensureShadow();
+      if (shadow) {
+        await shadow.snapshotIfNeeded();
       } else if (def.permission === "write") {
         const p = (input as { path?: unknown })?.path;
         if (typeof p === "string" && p) {
