@@ -3,7 +3,7 @@
 ## Architecture (orientation)
 - The agent loop is `Agent.send()` in `src/core/agent.ts` — an async generator of `AgentEvent`s (src/core/events.ts), consumed by three frontends: Ink TUI (`src/tui/`), plain REPL (`src/modes/repl.ts`), headless print (`src/modes/print.ts`).
 - Permission tiers read/write/execute in `src/permissions/policy.ts`; deny rules beat allow/accept/--yolo (bash denies match chained-command segments); plan mode denies write/execute outright; chained bash commands always ask.
-- Cross-cutting core: undo/redo via shadow-git snapshots (`core/shadow-git.ts`; in-memory fallback `core/checkpoints.ts` when git is missing), compaction + stale tool-output pruning (`core/compact.ts`, `pruneOldToolResults`), @mentions (`core/mentions.ts`), skills (`core/skills.ts`), custom commands (`core/commands.ts`).
+- Cross-cutting core: undo/redo via shadow-git snapshots (`core/shadow-git.ts`; in-memory fallback `core/checkpoints.ts` when git is missing), compaction — token-budgeted tail + iteratively-updated structured summary (`core/compact.ts`) — and stale tool-output pruning (`pruneOldToolResults`), @mentions (`core/mentions.ts`), skills (`core/skills.ts`), custom commands (`core/commands.ts`).
 - Providers: built-ins + any OpenAI-compatible baseURL (`providers/registry.ts`); model pricing/context from models.dev (`providers/modelsdev.ts`) — dynamic data wins over the static table.
 
 - Runtime: developed with Bun, but **write Node-compatible code only** — no `Bun.*` APIs (`bun run check:no-bun-globals` enforces this). Use `node:fs/promises`, `node:child_process`, etc.

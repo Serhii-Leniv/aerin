@@ -255,7 +255,7 @@ export class Agent {
   }
 
   async compactNow(): Promise<void> {
-    this.messages = await compact(this.opts.model, this.messages);
+    this.messages = await compact(this.opts.model, this.opts.modelId, this.messages);
     await this.opts.store?.rewrite(this.messages);
     // The old provider-reported context size no longer describes this history;
     // without the reset, shouldCompact() would re-fire on the next turn.
