@@ -30,6 +30,8 @@ export const configSchema = z.object({
   hooks: z.record(z.string()).optional(),
   /** Post-edit check command; false disables (default: auto-detect a "typecheck" script). */
   diagnostics: z.union([z.string(), z.literal(false)]).optional(),
+  /** Force MCP tool deferral on/off (default: auto when schemas would eat >10% of context). */
+  deferMcpTools: z.boolean().optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z
@@ -75,6 +77,9 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     hooks: { ...globalConfig.hooks, ...projectConfig.hooks },
     ...(projectConfig.diagnostics ?? globalConfig.diagnostics) !== undefined
       ? { diagnostics: projectConfig.diagnostics ?? globalConfig.diagnostics }
+      : {},
+    ...(projectConfig.deferMcpTools ?? globalConfig.deferMcpTools) !== undefined
+      ? { deferMcpTools: projectConfig.deferMcpTools ?? globalConfig.deferMcpTools }
       : {},
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },

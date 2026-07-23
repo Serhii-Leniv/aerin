@@ -122,11 +122,25 @@ export async function setupAgent(
   }
   let mcpConnections: McpConnection[] = [];
   const tools = builtinTools();
+  let deferredTools: Map<string, import("./tools/types.js").ToolDef> | undefined;
   if (flags.mcp && config.mcpServers && Object.keys(config.mcpServers).length > 0) {
     const res = await startMcpServers(config.mcpServers);
     mcpConnections = res.connections;
     warnings.push(...res.warnings);
-    for (const c of mcpConnections) tools.push(...c.tools);
+    const mcpDefs = mcpConnections.flatMap((c) => c.tools);
+    const { shouldDeferMcpTools, createDeferredToolBridge, estimateToolTokens } = await import(
+      "./core/deferred-tools.js"
+    );
+    if (shouldDeferMcpTools(mcpDefs, modelId, config.deferMcpTools)) {
+      const bridge = createDeferredToolBridge(mcpDefs);
+      tools.push(...bridge.bridgeTools);
+      deferredTools = bridge.byName;
+      warnings.push(
+        `${mcpDefs.length} MCP tools deferred behind tool_search (~${Math.round(estimateToolTokens(mcpDefs) / 1000)}k tokens of schemas kept out of context). "deferMcpTools": false disables.`,
+      );
+    } else {
+      tools.push(...mcpDefs);
+    }
   }
 
   // Pricing/context metadata in the background — cost meter fills in as it lands.
@@ -184,6 +198,7 @@ export async function setupAgent(
     initialMessages,
     ...(config.hooks && Object.keys(config.hooks).length > 0 ? { hooks: config.hooks } : {}),
     ...(diagnosticsCmd ? { diagnosticsCmd } : {}),
+    ...(deferredTools ? { deferredTools } : {}),
   });
 
   // Registered after construction so the tool tracks /model switches via the

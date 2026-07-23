@@ -142,6 +142,8 @@ export interface AgentOptions {
   hooks?: Record<string, string>;
   /** Check command run after successful write/edit; failures append to the tool result. */
   diagnosticsCmd?: string;
+  /** Deferred tools (schemas hidden from the model), reachable via the tool_call bridge. */
+  deferredTools?: Map<string, ToolDef>;
   /**
    * Worker sub-agents share the PARENT's shadow-git via this hook instead of
    * creating their own (two instances on one shadow index would race, and the
@@ -585,7 +587,30 @@ export class Agent {
     call: { toolCallId: string; toolName: string; input: unknown },
     ctx: ToolContext,
   ): AsyncGenerator<AgentEvent, { output: string; isError: boolean }> {
-    const def = this.toolsByName.get(call.toolName);
+    // Deferred-tool bridge: translate tool_call(name, args) into the real
+    // tool BEFORE anything else, so permissions, deny rules, hooks, and undo
+    // snapshots see the actual tool — only the transcript pairing (the
+    // caller's toolCallId/toolName) stays on the bridge call.
+    if (call.toolName === "tool_call" && this.opts.deferredTools && this.opts.deferredTools.size > 0) {
+      const bridge = (call.input ?? {}) as { name?: unknown; args?: unknown };
+      const realName = typeof bridge.name === "string" ? bridge.name : "";
+      if (!this.opts.deferredTools.has(realName)) {
+        return { output: `Unknown deferred tool: "${realName}". Use tool_search to find available tools.`, isError: true };
+      }
+      let args: unknown = {};
+      if (typeof bridge.args === "string" && bridge.args.trim()) {
+        try {
+          args = JSON.parse(bridge.args);
+        } catch {
+          return { output: `tool_call args must be a JSON object string. Got: ${String(bridge.args).slice(0, 200)}`, isError: true };
+        }
+      } else if (bridge.args && typeof bridge.args === "object") {
+        args = bridge.args; // some models send the object directly — accept it
+      }
+      call = { toolCallId: call.toolCallId, toolName: realName, input: args };
+    }
+
+    const def = this.toolsByName.get(call.toolName) ?? this.opts.deferredTools?.get(call.toolName);
     if (!def) return { output: `Unknown tool: ${call.toolName}`, isError: true };
 
     // MCP tools carry a JSON-Schema passthrough instead of zod — skip local validation there.
