@@ -914,10 +914,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   ];
 
   // Pin the input to the WINDOW BOTTOM while the transcript is still short:
-  // a blank spacer above the live frame pushes it down to the last row, and
-  // shrinks to zero once the transcript fills a screen (from then on the
-  // input naturally rides the bottom). Content stays in real scrollback, so
-  // native wheel scrolling keeps working the whole time.
+  // the live frame is bottom-aligned inside a fixed-height box that fills the
+  // rows below the transcript, and the box shrinks to the content height once
+  // the transcript fills a screen (from then on the input naturally rides the
+  // bottom). Content stays in real scrollback, so native wheel scrolling
+  // keeps working the whole time.
   // contentRows: wrap-aware row count of the transcript, capped at one screen
   // (counting more is pointless — the spacer is already zero by then).
   const contentRows = React.useMemo(() => {
@@ -935,16 +936,21 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     return n;
   }, [items, size.columns, size.rows]);
 
-  // Measured natural height of the live content; the spacer fills the rest.
-  // The frame's total height stays ≤ rows-1-contentRows < rows, so Ink never falls
-  // into its clear-terminal-per-frame fullscreen path.
+  // The live frame gets a FIXED height, set synchronously every render and
+  // hard-clamped to rows-2. A measured spacer would lag one frame behind
+  // (useEffect runs after paint), and any transient frame ≥ window height
+  // makes Ink clear the screen and reprint the ENTIRE transcript — each
+  // occurrence dumping a duplicate copy into scrollback. With a fixed-height
+  // bottom-aligned box the frame can never exceed the clamp, even on the
+  // frame where streaming or a dialog suddenly appears (it clips at the top
+  // for that one frame, then the measured height catches up).
   const liveRef = useRef<DOMElement | null>(null);
-  const [livePad, setLivePad] = useState(() => Math.max(0, (stdout?.rows ?? 24) - 16));
+  const [liveH, setLiveH] = useState(5);
   useEffect(() => {
     const h = liveRef.current ? measureElement(liveRef.current).height : 0;
-    const pad = Math.max(0, size.rows - 1 - contentRows - h);
-    setLivePad((prev) => (prev === pad ? prev : pad));
+    setLiveH((prev) => (prev === h || h === 0 ? prev : h));
   });
+  const frameH = Math.min(size.rows - 2, Math.max(liveH, size.rows - 1 - contentRows));
 
   // Height budget for the live frame (see the "Live tail" comment below):
   // cap every variable-height piece, then give streaming whatever is left.
@@ -989,9 +995,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           the screen and reprints the ENTIRE static transcript every frame
           (duplicated banner, walls of re-printed text) — so every
           variable-height piece here is hard-budgeted. */}
-      <Box flexDirection="column">
-      {livePad > 0 ? <Box height={livePad} flexShrink={0} /> : null}
-      <Box ref={liveRef} flexDirection="column">
+      <Box flexDirection="column" height={frameH} overflowY="hidden" justifyContent="flex-end">
+      <Box ref={liveRef} flexDirection="column" flexShrink={0}>
       {streaming ? (
         <Box flexShrink={0}>
           <Text>{tailLines(streaming, streamRows)}</Text>
