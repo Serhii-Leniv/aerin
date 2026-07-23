@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "./core/system-prompt.js";
 import { builtinTools } from "./tools/index.js";
 import { createAgentTool } from "./tools/agent-tool.js";
 import { createQuestionTool, type AskUser } from "./tools/question-tool.js";
+import { createSessionSearchTool } from "./tools/session-search-tool.js";
 import { createSkillTool } from "./tools/skill-tool.js";
 import { discoverSkills } from "./core/skills.js";
 import { discoverCommands, type CustomCommand } from "./core/commands.js";
@@ -161,6 +162,8 @@ export async function setupAgent(
   } else {
     store = await SessionStore.create(cwd, modelId);
   }
+  // Needs the live session id so search never surfaces the conversation it is part of.
+  tools.push(createSessionSearchTool({ currentSessionId: store.id }));
 
   const agent = new Agent({
     model,
