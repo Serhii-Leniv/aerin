@@ -28,6 +28,8 @@ export const configSchema = z.object({
   recentModels: z.array(z.string()).optional(),
   /** Shell hooks: {"pre:bash": "...", "post:edit": "bun run typecheck", "post:*": "..."}. */
   hooks: z.record(z.string()).optional(),
+  /** Post-edit check command; false disables (default: auto-detect a "typecheck" script). */
+  diagnostics: z.union([z.string(), z.literal(false)]).optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z
@@ -71,6 +73,9 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     subagentModel: projectConfig.subagentModel ?? globalConfig.subagentModel,
     recentModels: globalConfig.recentModels,
     hooks: { ...globalConfig.hooks, ...projectConfig.hooks },
+    ...(projectConfig.diagnostics ?? globalConfig.diagnostics) !== undefined
+      ? { diagnostics: projectConfig.diagnostics ?? globalConfig.diagnostics }
+      : {},
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },
     permissions: {

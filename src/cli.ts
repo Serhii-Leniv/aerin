@@ -165,6 +165,12 @@ export async function setupAgent(
   // Needs the live session id so search never surfaces the conversation it is part of.
   tools.push(createSessionSearchTool({ currentSessionId: store.id }));
 
+  const { resolveDiagnosticsCommand } = await import("./core/diagnostics.js");
+  const diagnosticsCmd = await resolveDiagnosticsCommand(cwd, {
+    configured: config.diagnostics,
+    hooks: config.hooks,
+  });
+
   const agent = new Agent({
     model,
     modelId,
@@ -177,6 +183,7 @@ export async function setupAgent(
     store,
     initialMessages,
     ...(config.hooks && Object.keys(config.hooks).length > 0 ? { hooks: config.hooks } : {}),
+    ...(diagnosticsCmd ? { diagnosticsCmd } : {}),
   });
 
   // Registered after construction so the tool tracks /model switches via the
@@ -196,6 +203,7 @@ export async function setupAgent(
       policy,
       onPermission,
       getShadow: () => agent.ensureShadow(),
+      ...(diagnosticsCmd ? { diagnosticsCmd } : {}),
     }),
   );
   // Only offer the question tool when someone can actually answer — in

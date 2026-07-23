@@ -51,6 +51,8 @@ export interface AgentToolDeps {
   onPermission?: OnPermission;
   /** Parent's shadow-git, so worker writes land in the parent turn's /undo snapshot. */
   getShadow?: () => Promise<ShadowGit | null>;
+  /** Post-edit diagnostics command — workers self-correct the same way the parent does. */
+  diagnosticsCmd?: string;
 }
 
 interface AgentToolInput {
@@ -145,6 +147,7 @@ export function createAgentTool(deps: AgentToolDeps): ToolDef<z.ZodTypeAny> {
         // Worker writes must land in the parent turn's shadow snapshot so
         // /undo covers them; a second ShadowGit on the same index would race.
         ...(isWorker && deps.getShadow ? { getShadow: deps.getShadow } : {}),
+        ...(isWorker && deps.diagnosticsCmd ? { diagnosticsCmd: deps.diagnosticsCmd } : {}),
       });
 
       const onAbort = (): void => sub.abort();

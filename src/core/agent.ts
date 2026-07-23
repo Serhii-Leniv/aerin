@@ -140,6 +140,8 @@ export interface AgentOptions {
   maxIterations?: number;
   /** Shell hooks keyed "pre:<tool>"/"post:<tool>" (or "pre:*"/"post:*"). */
   hooks?: Record<string, string>;
+  /** Check command run after successful write/edit; failures append to the tool result. */
+  diagnosticsCmd?: string;
   /**
    * Worker sub-agents share the PARENT's shadow-git via this hook instead of
    * creating their own (two instances on one shadow index would race, and the
@@ -726,6 +728,18 @@ export class Agent {
       const r = await runHook(postHook, call.toolName, input, this.opts.cwd);
       if (r.code !== 0) {
         output += `\n[post-hook "${call.toolName}" failed (exit ${r.code})]:\n${r.output.trim().slice(0, 1500)}`;
+      }
+    }
+
+    // Post-edit diagnostics: the project's check command runs after every
+    // successful file change, and its failures are fed straight back — the
+    // model fixes type/lint fallout now, not at the end of the task.
+    if (this.opts.diagnosticsCmd && (call.toolName === "write" || call.toolName === "edit")) {
+      const r = await runHook(this.opts.diagnosticsCmd, call.toolName, input, this.opts.cwd);
+      if (r.code !== 0) {
+        output +=
+          `\n\n[diagnostics after this ${call.toolName}: \`${this.opts.diagnosticsCmd}\` exited ${r.code} — fix these before moving on]:\n` +
+          r.output.trim().slice(0, 2000);
       }
     }
     return { output, isError: false };
