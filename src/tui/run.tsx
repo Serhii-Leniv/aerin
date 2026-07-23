@@ -107,11 +107,29 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   process.stdin.on("data", onStdinData);
   process.stdin.resume(); // background detection may have left stdin explicitly paused
 
-  const leaveAltScreen = (): void => {
-    process.stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+  // Restore EVERYTHING the TUI changed, on every exit path: bracketed paste
+  // and mouse reporting off, back to the normal screen, cursor visible again
+  // (Ink hides it and only restores on a clean unmount), and raw mode off
+  // (otherwise the shell stops echoing keystrokes). Idempotent — it runs from
+  // the finally block, the process exit hook, and signal handlers.
+  const restoreTerminal = (): void => {
+    try {
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    } catch {
+      // stdin already closed — nothing to restore
+    }
+    process.stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l\x1b[?25h");
   };
   process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h\x1b[?2004h");
-  process.once("exit", leaveAltScreen);
+  process.once("exit", restoreTerminal);
+  // Signals kill the process without running finally blocks — clean up first.
+  // (SIGKILL and a hard console close can still skip this; nothing can catch those.)
+  for (const sig of ["SIGTERM", "SIGHUP"] as const) {
+    process.once(sig, () => {
+      restoreTerminal();
+      process.exit(sig === "SIGTERM" ? 143 : 129);
+    });
+  }
   setTerminalTitle(`✦ aerin — ${setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin"}`);
 
   try {
@@ -123,7 +141,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   } finally {
     process.stdin.removeListener("data", onStdinData);
     process.stdin.pause();
-    leaveAltScreen();
+    restoreTerminal();
     setTerminalTitle(""); // hand the title back to the shell
     // The alt screen took the conversation with it — leave a plain transcript
     // in the normal terminal so the session survives in scrollback.

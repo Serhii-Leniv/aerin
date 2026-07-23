@@ -215,8 +215,34 @@ export function LineInput(props: {
   const after = value.slice(cursor + 1);
   const pad = Math.max(...matches.map((m) => m.name.length), 0) + 2;
 
+  // Suggestions render ABOVE the input row (Claude Code-style): the input is
+  // pinned to the bottom of the screen, so anything below it would be clipped
+  // into the bar; above, the list pushes the transcript up and stays visible.
   return (
     <Box flexDirection="column">
+      {matches.map((m, i) => (
+        <Text
+          key={m.name}
+          backgroundColor={i === cSugg ? C.accent : undefined}
+          color={i === cSugg ? "#000000" : C.dim}
+        >
+          {i === cSugg ? "❯ " : "  "}
+          {m.name.padEnd(pad)}
+          {m.description}
+          {"  "}
+        </Text>
+      ))}
+      {atMatch && atMatch[0].length > 1
+        ? fileMatches.map((f, i) => (
+            <Text
+              key={f}
+              backgroundColor={i === cFile ? C.accent : undefined}
+              color={i === cFile ? "#000000" : C.dim}
+            >
+              {i === cFile ? "❯ " : "  "}@{f}{"  "}
+            </Text>
+          ))
+        : null}
       <Box>
         <Text color={C.accent}>{props.prompt}</Text>
         <Text>{before}</Text>
@@ -234,29 +260,6 @@ export function LineInput(props: {
           </Text>
         ) : null}
       </Box>
-      {matches.map((m, i) => (
-        <Text
-          key={m.name}
-          backgroundColor={i === cSugg ? C.accent : undefined}
-          color={i === cSugg ? "#000000" : C.dim}
-        >
-          {"  "}
-          {m.name.padEnd(pad)}
-          {m.description}
-          {"  "}
-        </Text>
-      ))}
-      {atMatch && atMatch[0].length > 1
-        ? fileMatches.map((f, i) => (
-            <Text
-              key={f}
-              backgroundColor={i === cFile ? C.accent : undefined}
-              color={i === cFile ? "#000000" : C.dim}
-            >
-              {"  "}@{f}{"  "}
-            </Text>
-          ))
-        : null}
     </Box>
   );
 }
