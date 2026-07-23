@@ -8,7 +8,7 @@ import { shouldCompact, compact } from "./compact.js";
 import { modelFamilyGuidance } from "./system-prompt.js";
 import { Checkpoints } from "./checkpoints.js";
 import { ShadowGit } from "./shadow-git.js";
-import { hookFor, runHook } from "./hooks.js";
+import { hookFor, runHook, runPreHook, runPostHook } from "./hooks.js";
 import path from "node:path";
 import type { SessionStore } from "../session/store.js";
 
@@ -694,7 +694,7 @@ export class Agent {
     yield { type: "tool-call", id: call.toolCallId, name: call.toolName, input, summary };
 
     const target = targetFor(call.toolName, input);
-    const policyDecision = this.opts.policy.decide(def.permission, target);
+    let policyDecision = this.opts.policy.decide(def.permission, target);
     if (policyDecision === "deny") {
       const denyRule = this.opts.policy.deniedBy(target);
       return {
@@ -706,6 +706,39 @@ export class Agent {
         isError: true,
       };
     }
+    // Pre-hook runs BEFORE the permission prompt. The JSON protocol can
+    // deny, auto-allow, force a prompt, or rewrite the tool input; legacy
+    // hooks (non-JSON output) block on non-zero exit as before. Explicit
+    // deny rules above beat hooks; a rewritten input is re-checked against
+    // the policy so a hook cannot route around a deny rule.
+    const preHook = hookFor(this.opts.hooks, "pre", call.toolName);
+    if (preHook) {
+      const pre = await runPreHook(preHook, call.toolName, input, this.opts.cwd);
+      if (pre.decision === "deny") {
+        return { output: `Blocked by pre-hook: ${pre.reason ?? "(no reason given)"}`, isError: true };
+      }
+      if (pre.replacedInput !== undefined) {
+        if (typeof maybeZod.safeParse === "function") {
+          const reparsed = maybeZod.safeParse(pre.replacedInput);
+          if (!reparsed.success) {
+            return {
+              output: `Pre-hook rewrote the input but it failed validation: ${reparsed.error?.message ?? "schema mismatch"}`,
+              isError: true,
+            };
+          }
+          input = reparsed.data;
+        } else {
+          input = pre.replacedInput;
+        }
+        policyDecision = this.opts.policy.decide(def.permission, targetFor(call.toolName, input));
+        if (policyDecision === "deny") {
+          return { output: "The pre-hook's rewritten input is blocked by a permission deny rule.", isError: true };
+        }
+      }
+      if (pre.decision === "allow") policyDecision = "allow";
+      else if (pre.decision === "ask") policyDecision = "ask";
+    }
+
     if (policyDecision === "ask") {
       const preview = def.preview ? await def.preview(input, ctx).catch(() => undefined) : undefined;
       const decision = await this.opts.onPermission({
@@ -726,18 +759,6 @@ export class Agent {
         if (decision.scope === "project") {
           await persistProjectRule(this.opts.cwd, rule).catch(() => {});
         }
-      }
-    }
-
-    // A pre-hook exiting non-zero blocks the call; its output goes to the model.
-    const preHook = hookFor(this.opts.hooks, "pre", call.toolName);
-    if (preHook) {
-      const r = await runHook(preHook, call.toolName, input, this.opts.cwd);
-      if (r.code !== 0) {
-        return {
-          output: `Blocked by pre-hook (exit ${r.code}): ${r.output.trim().slice(0, 800) || "(no output)"}`,
-          isError: true,
-        };
       }
     }
 
@@ -810,14 +831,13 @@ export class Agent {
       return { output: error instanceof Error ? error.message : String(error), isError: true };
     }
 
-    // A failing post-hook appends its output (e.g. typecheck errors after an
-    // edit) so the model sees and fixes the fallout immediately.
+    // Post-hook: legacy failures and JSON "context" both append to the tool
+    // result (e.g. typecheck errors after an edit) so the model sees and
+    // fixes the fallout immediately. The hook gets the tool's output on stdin.
     const postHook = hookFor(this.opts.hooks, "post", call.toolName);
     if (postHook) {
-      const r = await runHook(postHook, call.toolName, input, this.opts.cwd);
-      if (r.code !== 0) {
-        output += `\n[post-hook "${call.toolName}" failed (exit ${r.code})]:\n${r.output.trim().slice(0, 1500)}`;
-      }
+      const r = await runPostHook(postHook, call.toolName, input, this.opts.cwd, output);
+      if (r.appended) output += r.appended;
     }
 
     // Post-edit diagnostics: the project's check command runs after every

@@ -26,7 +26,11 @@ export const configSchema = z.object({
   subagentModel: z.string().optional(),
   /** Maintained automatically: last models picked with /model, newest first. */
   recentModels: z.array(z.string()).optional(),
-  /** Shell hooks: {"pre:bash": "...", "post:edit": "bun run typecheck", "post:*": "..."}. */
+  /**
+   * Shell hooks: {"pre:bash": "...", "post:edit": "bun run typecheck", "post:*": "..."}.
+   * Exit-code semantics by default; print a JSON object to use the structured
+   * protocol (pre: {"decision","reason","input"}, post: {"context"}) — see core/hooks.ts.
+   */
   hooks: z.record(z.string()).optional(),
   /** Post-edit check command; false disables (default: auto-detect a "typecheck" script). */
   diagnostics: z.union([z.string(), z.literal(false)]).optional(),
