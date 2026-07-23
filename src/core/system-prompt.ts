@@ -7,6 +7,53 @@ import type { Skill } from "./skills.js";
 
 const MAX_AGENTS_MD_CHARS = 20_000;
 
+/**
+ * Per-model-family prompt tuning (opencode-style, but as one shared base plus
+ * a small addendum instead of five duplicated prompt files). The base prompt
+ * was written against Claude, so the claude family gets no addendum; other
+ * families get a few lines targeting their known failure modes. Appended at
+ * REQUEST time by Agent.effectiveSystemPrompt(), not baked in here, so /model
+ * switches mid-session pick the right guidance — and sub-agents get guidance
+ * for their own (possibly cheaper) model automatically.
+ */
+export type ModelFamily = "claude" | "gpt" | "gemini" | "other";
+
+export function modelFamily(modelId: string): ModelFamily {
+  const id = modelId.toLowerCase();
+  if (id.includes("claude")) return "claude";
+  if (id.includes("gemini") || id.includes("gemma")) return "gemini";
+  // Token-wise so "gpt"/"o3"/"codex" match inside "openrouter/openai/gpt-5.2"
+  // without substring false positives (e.g. "grok" must not match "o*").
+  const tokens = id.split(/[^a-z0-9.]+/);
+  if (tokens.some((t) => t.startsWith("gpt") || t.startsWith("codex") || /^o\d+$/.test(t))) return "gpt";
+  return "other";
+}
+
+const FAMILY_GUIDANCE: Record<ModelFamily, string> = {
+  claude: "",
+  gpt: `Model-specific guidance (GPT family):
+- You are an agent: keep working until the request is fully resolved before ending your turn. Never end having only announced what you will do — do it.
+- Do not ask for confirmation before reversible, in-scope actions; the permission system asks the user when needed.
+- Never reconstruct file contents or command output from memory — read the file or run the command.
+- Keep the final message short: what changed and the verification result. No headers, no recap lists, no next-step offers unless asked.`,
+  gemini: `Model-specific guidance (Gemini family):
+- Make the smallest change that satisfies the task. Do not refactor, reformat, or "improve" surrounding code beyond the request.
+- Always invoke tools through tool calls. Never print a code block or JSON describing a call instead of making it.
+- If an edit fails to match twice, re-read the file and rebuild the edit from its actual content instead of retrying variations.
+- Do not apologize or re-explain after errors — state the issue once and proceed with the fix.`,
+  other: `Model-specific guidance:
+- The edit tool needs an EXACT match of existing text: read the file first and copy the target verbatim, including whitespace.
+- Issue tool calls one at a time unless you are certain they are independent.
+- Never fabricate a tool result, file content, or command output. If you did not run it, do not claim it.
+- Keep edits small and focused; several small verified edits beat one large rewrite.
+- If a tool errors twice in a row, stop and reconsider the approach instead of retrying the same call.`,
+};
+
+/** Family addendum for the current model; empty for the family the base prompt targets. */
+export function modelFamilyGuidance(modelId: string): string {
+  return FAMILY_GUIDANCE[modelFamily(modelId)];
+}
+
 /** Walk from cwd upward collecting AGENTS.md files (nearest last, so it wins). */
 export async function discoverAgentsMd(cwd: string): Promise<string[]> {
   const found: string[] = [];

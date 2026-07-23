@@ -5,6 +5,7 @@ import { PermissionPolicy, targetFor } from "../permissions/policy.js";
 import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
 import { shouldCompact, compact } from "./compact.js";
+import { modelFamilyGuidance } from "./system-prompt.js";
 import { Checkpoints } from "./checkpoints.js";
 import { ShadowGit } from "./shadow-git.js";
 import { hookFor, runHook } from "./hooks.js";
@@ -249,9 +250,13 @@ export class Agent {
   }
 
   private effectiveSystemPrompt(): string {
+    // Family guidance resolves from the CURRENT model, so /model switches
+    // mid-session swap the addendum along with the model.
+    const tuning = modelFamilyGuidance(this.opts.modelId);
+    const base = tuning ? `${this.opts.systemPrompt}\n\n${tuning}` : this.opts.systemPrompt;
     return this.goal
-      ? `${this.opts.systemPrompt}\n\nSession goal (set by the user — keep every action pointed at it):\n${this.goal}`
-      : this.opts.systemPrompt;
+      ? `${base}\n\nSession goal (set by the user — keep every action pointed at it):\n${this.goal}`
+      : base;
   }
 
   async compactNow(): Promise<void> {
