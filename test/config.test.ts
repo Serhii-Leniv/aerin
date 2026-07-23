@@ -112,7 +112,7 @@ describe("truncateOutput", () => {
   test("caps line count keeping head and tail", () => {
     const total = MAX_OUTPUT_LINES + 500;
     const big = Array.from({ length: total }, (_, i) => `line${i}`).join("\n");
-    const out = truncateOutput(big);
+    const out = truncateOutput(big, { spillDir: false });
     expect(out).toContain("output truncated");
     expect(out.split("\n").length).toBeLessThan(MAX_OUTPUT_LINES + 10);
     expect(out).toContain("line0");
