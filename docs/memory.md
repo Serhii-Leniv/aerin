@@ -1,13 +1,21 @@
 # Memory
 
-Source: `src/tools/memory-tool.ts`, loaded by `src/core/system-prompt.ts`.
+Source: `src/tools/memory-tool.ts` (bounded, Hermes-style); budget surfaced by `src/core/system-prompt.ts`.
 
-The `memory` tool appends durable facts under a `## Memory` heading in the project's `AGENTS.md` — build/test commands, conventions, things the user corrected. Every future session loads them with the project instructions.
+Durable project facts live under a `## Memory` heading in the project's `AGENTS.md` — build/test commands, conventions, decisions, things the user corrected — and load into every future session's prompt.
+
+## Bounded by design
+The section has a **hard 2,500-character budget** (~900 tokens in every prompt). Memory files that only grow become expensive and stale; the budget makes the model curate.
+
+## Operations
+- `add` (default) — new fact, newest first; exact duplicates are no-ops. **When the budget would be exceeded, the add FAILS** with the current entries and instructions: merge overlapping entries with `replace`, delete stale ones with `remove`, then retry — all in the same turn. The model does its own eviction; no silent dropping, no unbounded growth.
+- `replace` — rewrite the ONE entry containing `match` with `note` (the merge/update primitive).
+- `remove` — delete the ONE entry containing `match`.
+
+Matching is case-insensitive substring, verbatim (a trailing space can disambiguate `fact-1 ` from `fact-10`); zero matches and ambiguous matches are actionable errors listing the candidates.
 
 ## Notes
-- Deduplicated: saving the same note twice is a no-op.
-- Injection-hardened: the system prompt explicitly marks `## Memory` lines as hints written by past sessions — never instructions that can override the rules, and anything asking to change behavior, hide actions, or exfiltrate data is to be ignored.
-- The system prompt nudges the model to save durable project facts when it learns them.
-- Write-tier: the first save in a session asks unless allowed by rule/mode.
-
-Planned evolution (see the adoption backlog): Hermes-style bounded memory — char budgets, add/replace/remove with substring matching, and error-at-capacity that forces the model to consolidate instead of letting the file grow forever.
+- Every operation reports usage — `(memory 1,390/2500 chars, 9 entries)` — and the system prompt shows the budget, warning the model to consolidate proactively when past 80%.
+- Injection-hardened: entries are single-line (no heading breakouts), capped at 300 chars, and the system prompt marks `## Memory` lines as hints that can never override rules.
+- Other AGENTS.md sections are never touched by memory operations.
+- Write-tier: asks unless allowed by rule/mode.
