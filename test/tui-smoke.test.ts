@@ -45,6 +45,20 @@ describe("tui smoke", () => {
       expect(plain).toContain("█████╗"); // the wordmark rendered
       expect(result.out).toContain("❯"); // the input prompt rendered
       expect(result.code).toBe(0); // clean exit through the /exit path
+
+      // REGRESSION (v0.0.89-96 scroll saga): the app must own the whole
+      // window — alternate screen entered on start and left on exit, SGR
+      // mouse reporting on/off in the same way, so the user can never scroll
+      // above the app into shell history.
+      expect(result.out).toContain("\x1b[?1049h"); // enter alt screen
+      expect(result.out).toContain("\x1b[?1049l"); // leave alt screen on exit
+      expect(result.out).toContain("\x1b[?1000h"); // mouse reporting on (wheel scrolls in-app)
+      expect(result.out).toContain("\x1b[?1006l"); // mouse reporting off on exit
+
+      // REGRESSION: Ink's clear-terminal-per-frame fullscreen path (frame
+      // height >= terminal rows) must never fire — it wipes the screen and
+      // reprints the whole transcript every frame.
+      expect(result.out).not.toContain("\x1b[2J");
     },
     { timeout: 40_000 },
   );

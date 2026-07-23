@@ -29,7 +29,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
+import { anchorOffset, buildFlatLines, scrollWindow, stepScroll, type TranscriptKind } from "./scroll.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -75,7 +75,7 @@ export interface TuiSetup {
 
 interface TranscriptItem {
   key: number;
-  kind: "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
+  kind: TranscriptKind;
   text: string;
 }
 
@@ -923,36 +923,14 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: c.description })),
   ];
 
-  // Flat VISUAL-row buffer of the transcript — the unit of scrolling. Long
-  // lines are pre-wrapped (ANSI-aware) to the terminal width so one scroll
-  // step is one terminal row, matching the live view. Blank lines reproduce
-  // the item margins. The LIVE streaming text is part of the buffer, so
-  // output keeps flowing (and stays reachable) while scrolled back — in the
-  // old design it silently vanished until the message finished.
+  // Flat VISUAL-row buffer of the transcript — the unit of scrolling (see
+  // scroll.ts). Includes the LIVE streaming text, so output keeps flowing
+  // (and stays reachable) while scrolled back.
   const [viewportH, setViewportH] = useState(10);
-  const flatLines = React.useMemo(() => {
-    const width = Math.max(20, size.columns - 2);
-    const lines: { key: string; kind: TranscriptItem["kind"]; text: string }[] = [];
-    for (const item of items) {
-      item.text.split("\n").forEach((line, i) => {
-        const prefixed = item.kind === "user" && i === 0 ? `❯ ${line}` : line;
-        wrapAnsiLine(prefixed, width).forEach((row, j) => {
-          lines.push({ key: `${item.key}:${i}:${j}`, kind: item.kind, text: row });
-        });
-      });
-      if (item.kind === "assistant" || item.kind === "user") {
-        lines.push({ key: `${item.key}:m`, kind: "info", text: "" });
-      }
-    }
-    if (streaming) {
-      streaming.split("\n").forEach((line, i) => {
-        wrapAnsiLine(line, width).forEach((row, j) => {
-          lines.push({ key: `live:${i}:${j}`, kind: "assistant", text: row });
-        });
-      });
-    }
-    return lines;
-  }, [items, streaming, size.columns]);
+  const flatLines = React.useMemo(
+    () => buildFlatLines(items, streaming, size.columns),
+    [items, streaming, size.columns],
+  );
   const flatLinesRef = useRef(flatLines);
   flatLinesRef.current = flatLines;
   const viewportHRef = useRef(viewportH);
@@ -967,27 +945,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     const delta = flatLines.length - prevLineCountRef.current;
     prevLineCountRef.current = flatLines.length;
     if (delta === 0) return;
-    setScrollOffset((o) => {
-      if (o === 0) return 0;
-      const max = Math.max(0, flatLines.length - Math.max(4, viewportHRef.current));
-      return Math.min(max, Math.max(0, o + delta));
-    });
+    setScrollOffset((o) => anchorOffset(o, delta, flatLines.length, viewportHRef.current));
   }, [flatLines.length]);
 
   const scrollBy = useCallback((deltaLines: number) => {
-    setScrollOffset((o) => {
-      const lines = flatLinesRef.current;
-      const max = Math.max(0, lines.length - Math.max(4, viewportHRef.current));
-      // Trailing blank margin rows carry no content — the first upward step
-      // hops past them (otherwise a wheel notch "scrolls" only blanks and
-      // looks dead), and scrolling back down inside them snaps to live.
-      let blanks = 0;
-      while (blanks < lines.length && lines[lines.length - 1 - blanks]!.text === "") blanks++;
-      let next = o + deltaLines;
-      if (o === 0 && deltaLines > 0) next += blanks;
-      else if (deltaLines < 0 && next <= blanks) next = 0;
-      return Math.min(max, Math.max(0, next));
-    });
+    setScrollOffset((o) => stepScroll(o, deltaLines, flatLinesRef.current, viewportHRef.current));
   }, []);
 
   // Mouse wheel scrolls the transcript one row per event (a notch is ~3
@@ -1055,10 +1017,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         justifyContent={overflowing && scrollOffset === 0 ? "flex-end" : "flex-start"}
       >
         {scrollOffset > 0 ? (
-          (() => {
-            const end = Math.max(0, flatLines.length - scrollOffset);
-            const start = Math.max(0, end - viewportH);
-            return flatLines.slice(start, end).map((l) => (
+          scrollWindow(flatLines, scrollOffset, viewportH).map((l) => (
               <Box key={l.key} flexShrink={0}>
                 <Text
                   wrap="truncate-end"
@@ -1075,8 +1034,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                   {l.text || " "}
                 </Text>
               </Box>
-            ));
-          })()
+          ))
         ) : (
         <Box ref={contentRef} flexDirection="column" flexShrink={0}>
         {items.slice(-VIEWPORT_ITEMS).map((item) => (
