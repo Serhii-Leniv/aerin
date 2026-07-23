@@ -196,6 +196,12 @@ export class Agent {
     this.currentAbort?.abort();
   }
 
+  /** Identical-call loop breaker (opencode's doom_loop): this turn's dispatched calls. */
+  private turnToolCalls: { name: string; inputJson: string }[] = [];
+  /** Tools the user chose "always continue" for after a doom-loop prompt (session-scoped). */
+  private doomLoopApproved = new Set<string>();
+  private static readonly DOOM_LOOP_THRESHOLD = 3;
+
   /** Set when the primary model failed mid-turn and a fallback took over. */
   private failover: { model: LanguageModel; modelId: string } | undefined;
   private failoverIndex = 0;
@@ -412,6 +418,7 @@ export class Agent {
     // Each turn re-probes the primary model; failover state never outlives a turn.
     this.failover = undefined;
     this.failoverIndex = 0;
+    this.turnToolCalls.length = 0; // doom-loop tracking is per turn
     const newMessages: ModelMessage[] = [];
     const userMessage: ModelMessage =
       images && images.length > 0
@@ -760,6 +767,35 @@ export class Agent {
     }
     const summary = def.summarize(input);
     yield { type: "tool-call", id: call.toolCallId, name: call.toolName, input, summary };
+
+    // Doom-loop breaker: the same tool called with byte-identical input for
+    // the 4th time in one turn is a stuck retry, whatever the permission tier
+    // or mode — surface it to the user before burning more tokens on it.
+    const inputJson = JSON.stringify(input ?? null);
+    const recent = this.turnToolCalls.slice(-Agent.DOOM_LOOP_THRESHOLD);
+    const isDoomLoop =
+      recent.length === Agent.DOOM_LOOP_THRESHOLD &&
+      recent.every((c) => c.name === call.toolName && c.inputJson === inputJson) &&
+      !this.doomLoopApproved.has(call.toolName);
+    this.turnToolCalls.push({ name: call.toolName, inputJson });
+    if (isDoomLoop) {
+      const decision = await this.opts.onPermission({
+        tool: call.toolName,
+        input,
+        summary: `Doom loop: ${summary} repeated ${Agent.DOOM_LOOP_THRESHOLD + 1}× with identical input — continue?`,
+      });
+      if (decision.kind === "deny") {
+        return {
+          output:
+            `Stopped: you have called ${call.toolName} ${Agent.DOOM_LOOP_THRESHOLD + 1} times with IDENTICAL input` +
+            ` — repeating it will not produce a different result.` +
+            `${decision.reason ? ` The user says: ${decision.reason}` : ""}` +
+            ` Change your approach, or explain what is blocking you.`,
+          isError: true,
+        };
+      }
+      if (decision.kind === "allow-always") this.doomLoopApproved.add(call.toolName);
+    }
 
     const target = targetFor(call.toolName, input);
     let policyDecision = this.opts.policy.decide(def.permission, target);
