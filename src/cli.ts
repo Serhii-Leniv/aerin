@@ -199,6 +199,15 @@ export async function setupAgent(
     ...(config.hooks && Object.keys(config.hooks).length > 0 ? { hooks: config.hooks } : {}),
     ...(diagnosticsCmd ? { diagnosticsCmd } : {}),
     ...(deferredTools ? { deferredTools } : {}),
+    // Lazy resolvers: a fallback with no key just gets skipped at failover time.
+    ...(config.fallbackModels && config.fallbackModels.length > 0
+      ? {
+          fallbacks: config.fallbackModels.map((id) => ({
+            modelId: id,
+            resolve: () => resolveModel(id, config),
+          })),
+        }
+      : {}),
   });
 
   // Registered after construction so the tool tracks /model switches via the

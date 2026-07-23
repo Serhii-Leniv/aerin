@@ -16,6 +16,17 @@ const MAX_ITERATIONS = 50;
 /** Extra whole-request retries when the stream fails before producing content. */
 const MAX_STREAM_RETRIES = 2;
 
+/**
+ * Errors where a DIFFERENT provider can still serve the request: everything
+ * retryable, plus exhausted quotas/billing (pointless to retry same-provider,
+ * exactly what a fallback chain is for). Auth/validation errors stay fatal —
+ * they need the user, not another model.
+ */
+export function isFailoverEligible(err: unknown): boolean {
+  if (isRetryableError(err)) return true;
+  return /per.day|daily|quota|insufficient.credit|billing|payment|overloaded/.test(errorMessage(err).toLowerCase());
+}
+
 /** Transient provider failures worth retrying: rate limits, overload, network. */
 export function isRetryableError(err: unknown): boolean {
   // Exhausted quotas won't recover in seconds — retrying just wastes a minute.
@@ -144,6 +155,8 @@ export interface AgentOptions {
   diagnosticsCmd?: string;
   /** Deferred tools (schemas hidden from the model), reachable via the tool_call bridge. */
   deferredTools?: Map<string, ToolDef>;
+  /** Ordered failover chain tried when the active model fails (config fallbackModels). */
+  fallbacks?: { modelId: string; resolve: () => LanguageModel }[];
   /**
    * Worker sub-agents share the PARENT's shadow-git via this hook instead of
    * creating their own (two instances on one shadow index would race, and the
@@ -178,9 +191,41 @@ export class Agent {
     this.currentAbort?.abort();
   }
 
+  /** Set when the primary model failed mid-turn and a fallback took over. */
+  private failover: { model: LanguageModel; modelId: string } | undefined;
+  private failoverIndex = 0;
+
+  /** The model actually serving requests right now (fallback while failed over). */
+  private get activeModel(): LanguageModel {
+    return this.failover?.model ?? this.opts.model;
+  }
+
+  private get activeModelId(): string {
+    return this.failover?.modelId ?? this.opts.modelId;
+  }
+
+  /** Step down the failover chain; skips the active model and unresolvable entries. */
+  private advanceFailover(): { modelId: string } | undefined {
+    const list = this.opts.fallbacks ?? [];
+    while (this.failoverIndex < list.length) {
+      const f = list[this.failoverIndex++] as { modelId: string; resolve: () => LanguageModel };
+      if (f.modelId === this.activeModelId) continue;
+      try {
+        this.failover = { model: f.resolve(), modelId: f.modelId };
+        return this.failover;
+      } catch {
+        continue; // no key / bad id — try the next one
+      }
+    }
+    return undefined;
+  }
+
   setModel(model: LanguageModel, modelId: string): void {
     this.opts.model = model;
     this.opts.modelId = modelId;
+    // A deliberate model switch supersedes any failover state.
+    this.failover = undefined;
+    this.failoverIndex = 0;
   }
 
   get modelId(): string {
@@ -270,9 +315,9 @@ export class Agent {
   }
 
   private effectiveSystemPrompt(): string {
-    // Family guidance resolves from the CURRENT model, so /model switches
-    // mid-session swap the addendum along with the model.
-    const tuning = modelFamilyGuidance(this.opts.modelId);
+    // Family guidance resolves from the CURRENT model — /model switches and
+    // mid-turn failovers swap the addendum along with the model.
+    const tuning = modelFamilyGuidance(this.activeModelId);
     const base = tuning ? `${this.opts.systemPrompt}\n\n${tuning}` : this.opts.systemPrompt;
     return this.goal
       ? `${base}\n\nSession goal (set by the user — keep every action pointed at it):\n${this.goal}`
@@ -280,7 +325,8 @@ export class Agent {
   }
 
   async compactNow(): Promise<void> {
-    this.messages = await compact(this.opts.model, this.opts.modelId, this.messages);
+    // Active model: while failed over, the primary can't serve the summary call either.
+    this.messages = await compact(this.activeModel, this.activeModelId, this.messages);
     await this.opts.store?.rewrite(this.messages);
     // The old provider-reported context size no longer describes this history;
     // without the reset, shouldCompact() would re-fire on the next turn.
@@ -308,7 +354,7 @@ export class Agent {
   } {
     const pruned = pruneOldToolResults(this.messages);
     const systemPrompt = this.effectiveSystemPrompt();
-    if (!this.opts.modelId.startsWith("anthropic/")) {
+    if (!this.activeModelId.startsWith("anthropic/")) {
       return { system: systemPrompt, messages: pruned };
     }
     const cacheOpts = { anthropic: { cacheControl: { type: "ephemeral" } } };
@@ -336,6 +382,9 @@ export class Agent {
     const abort = new AbortController();
     this.currentAbort = abort;
     this.injected.length = 0; // a fresh prompt supersedes stale mid-turn notes
+    // Each turn re-probes the primary model; failover state never outlives a turn.
+    this.failover = undefined;
+    this.failoverIndex = 0;
     const newMessages: ModelMessage[] = [];
     const userMessage: ModelMessage =
       images && images.length > 0
@@ -363,7 +412,7 @@ export class Agent {
       const maxIterations = this.opts.maxIterations ?? MAX_ITERATIONS;
       let finished = false;
       for (let iteration = 0; iteration < maxIterations; iteration++) {
-        if (shouldCompact(this.opts.modelId, this.lastInputTokens)) {
+        if (shouldCompact(this.activeModelId, this.lastInputTokens)) {
           const pre = this.lastInputTokens;
           yield { type: "compaction", preTokens: pre };
           await this.compactNow();
@@ -382,7 +431,7 @@ export class Agent {
         // error BEFORE any content arrived; once content streamed, fail honestly.
         for (let attempt = 0; ; attempt++) {
           result = streamText({
-            model: this.opts.model,
+            model: this.activeModel,
             ...this.requestPrompt(),
             tools: this.buildToolSet(),
             abortSignal: abort.signal,
@@ -410,7 +459,22 @@ export class Agent {
             }
             break;
           } catch (err) {
-            if (received || attempt >= MAX_STREAM_RETRIES || abort.signal.aborted || !isRetryableError(err)) {
+            if (received || abort.signal.aborted) throw err;
+            if (attempt >= MAX_STREAM_RETRIES || !isRetryableError(err)) {
+              // Retries exhausted (or a fail-fast error like a spent quota):
+              // walk the failover chain before giving up on the turn.
+              const from = this.activeModelId;
+              if (isFailoverEligible(err) && this.advanceFailover()) {
+                toolCalls.length = 0;
+                yield {
+                  type: "failover",
+                  from,
+                  to: this.activeModelId,
+                  message: errorMessage(err).slice(0, 200),
+                };
+                attempt = -1; // fresh retry budget for the fallback model
+                continue;
+              }
               throw err;
             }
             toolCalls.length = 0;
@@ -461,7 +525,7 @@ export class Agent {
         this.totalOutputTokens += outTok;
         // Projected cost from live pricing; free-tier providers return
         // undefined so no money is ever counted or shown for them.
-        const cost = estimateCostUsd(this.opts.modelId, inTok, outTok);
+        const cost = estimateCostUsd(this.activeModelId, inTok, outTok);
         if (cost !== undefined) this.totalCostUsd += cost;
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };
 

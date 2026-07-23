@@ -1,7 +1,7 @@
 {
   "name": "aerin-agent",
-  "version": "0.0.100",
-  "description": "Aerin — an open-source CLI coding agent. Multi-provider, MCP-capable, with a terminal UI.",
+  "version": "0.0.101",
+  "description": "Aerin your open-source coding agent",
   "type": "module",
   "license": "MIT",
   "bin": {

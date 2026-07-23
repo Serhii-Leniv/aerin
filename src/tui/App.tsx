@@ -429,6 +429,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                 `(provider error — retrying, attempt ${event.attempt}/${event.maxAttempts}: ${event.message.slice(0, 80)})`,
               );
               break;
+            case "failover":
+              pushItem(
+                "info",
+                `(${event.from} failed: ${event.message.slice(0, 80)} — continuing on ${event.to})`,
+              );
+              break;
             case "subagent-update": {
               if (event.status === "running") {
                 setSubagents((m) =>

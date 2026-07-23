@@ -32,6 +32,8 @@ export const configSchema = z.object({
   diagnostics: z.union([z.string(), z.literal(false)]).optional(),
   /** Force MCP tool deferral on/off (default: auto when schemas would eat >10% of context). */
   deferMcpTools: z.boolean().optional(),
+  /** Ordered "provider/model" ids tried when the active model fails (rate limit, outage, spent quota). */
+  fallbackModels: z.array(z.string()).optional(),
   providers: z.record(providerSchema).optional(),
   mcpServers: z.record(mcpServerSchema).optional(),
   permissions: z
@@ -80,6 +82,9 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
       : {},
     ...(projectConfig.deferMcpTools ?? globalConfig.deferMcpTools) !== undefined
       ? { deferMcpTools: projectConfig.deferMcpTools ?? globalConfig.deferMcpTools }
+      : {},
+    ...(projectConfig.fallbackModels ?? globalConfig.fallbackModels)
+      ? { fallbackModels: projectConfig.fallbackModels ?? globalConfig.fallbackModels }
       : {},
     providers: { ...globalConfig.providers, ...projectConfig.providers },
     mcpServers: { ...globalConfig.mcpServers, ...projectConfig.mcpServers },

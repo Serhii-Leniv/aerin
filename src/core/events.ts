@@ -34,6 +34,8 @@ export type AgentEvent =
   /** Intentional end-of-turn sentinel; frontends may ignore it (iteration ends anyway). */
   | { type: "turn-end" }
   | { type: "retry"; attempt: number; maxAttempts: number; message: string }
+  /** The active model failed and the turn continues on a configured fallback. */
+  | { type: "failover"; from: string; to: string; message: string }
   | { type: "error"; message: string };
 
 export type PermissionDecision =

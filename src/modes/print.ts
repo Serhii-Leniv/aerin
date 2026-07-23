@@ -48,6 +48,9 @@ export async function runPrint(flags: PrintFlags, prompt: string): Promise<void>
         case "retry":
           process.stderr.write(`[retry ${event.attempt}/${event.maxAttempts}] ${event.message.slice(0, 120)}\n`);
           break;
+        case "failover":
+          process.stderr.write(`[failover] ${event.from} -> ${event.to}: ${event.message.slice(0, 120)}\n`);
+          break;
         case "subagent-update":
           if (event.status !== "running") {
             process.stderr.write(

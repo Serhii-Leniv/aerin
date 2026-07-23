@@ -129,6 +129,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
           case "retry":
             stdout.write(`  [retrying after provider error, attempt ${event.attempt}/${event.maxAttempts}]\n`);
             break;
+          case "failover":
+            stdout.write(`  [${event.from} failed — continuing on ${event.to}]\n`);
+            break;
           case "subagent-update":
             if (event.status !== "running") {
               stdout.write(
