@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Static, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -29,6 +29,7 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
+import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -912,6 +913,39 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: c.description })),
   ];
 
+  // Pin the input to the WINDOW BOTTOM while the transcript is still short:
+  // a blank spacer above the live frame pushes it down to the last row, and
+  // shrinks to zero once the transcript fills a screen (from then on the
+  // input naturally rides the bottom). Content stays in real scrollback, so
+  // native wheel scrolling keeps working the whole time.
+  // contentRows: wrap-aware row count of the transcript, capped at one screen
+  // (counting more is pointless — the spacer is already zero by then).
+  const contentRows = React.useMemo(() => {
+    const cap = size.rows;
+    let n = 0;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]!;
+      if (item.kind === "assistant" || item.kind === "user") n += 1; // margin row
+      for (const line of item.text.split("\n")) {
+        n += wrapAnsiLine(line, Math.max(20, size.columns)).length;
+        if (n >= cap) return cap;
+      }
+      if (n >= cap) return cap;
+    }
+    return n;
+  }, [items, size.columns, size.rows]);
+
+  // Measured natural height of the live content; the spacer fills the rest.
+  // The frame's total height stays ≤ rows-1-contentRows < rows, so Ink never falls
+  // into its clear-terminal-per-frame fullscreen path.
+  const liveRef = useRef<DOMElement | null>(null);
+  const [livePad, setLivePad] = useState(() => Math.max(0, (stdout?.rows ?? 24) - 16));
+  useEffect(() => {
+    const h = liveRef.current ? measureElement(liveRef.current).height : 0;
+    const pad = Math.max(0, size.rows - 1 - contentRows - h);
+    setLivePad((prev) => (prev === pad ? prev : pad));
+  });
+
   // Height budget for the live frame (see the "Live tail" comment below):
   // cap every variable-height piece, then give streaming whatever is left.
   const shownSubagents = [...subagents.entries()].slice(0, 4);
@@ -956,6 +990,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           (duplicated banner, walls of re-printed text) — so every
           variable-height piece here is hard-budgeted. */}
       <Box flexDirection="column">
+      {livePad > 0 ? <Box height={livePad} flexShrink={0} /> : null}
+      <Box ref={liveRef} flexDirection="column">
       {streaming ? (
         <Box flexShrink={0}>
           <Text>{tailLines(streaming, streamRows)}</Text>
@@ -1303,6 +1339,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           {mode === "accept" ? <Text color={C.ok}>{" · >> accept edits (shift+tab)"}</Text> : null}
           {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}
         </Text>
+      </Box>
       </Box>
       </Box>
     </>
