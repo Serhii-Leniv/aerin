@@ -66,26 +66,6 @@ function unavailableModel(modelId: string, reason: string): LanguageModel {
   } as unknown as LanguageModel;
 }
 
-/** First-run guidance shown when no model provider is usable at all. */
-function onboardingError(cause: unknown): Error {
-  const reason = cause instanceof Error ? cause.message : String(cause);
-  return new Error(`no usable model provider found (${reason})
-
-To get started, aerin needs a model. Pick one:
-
-  1. Set a provider API key as an environment variable:
-       ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, or OPENROUTER_API_KEY
-     (an OpenRouter key unlocks models from every lab, including free-tier ones)
-
-  2. Or run a local model — no key needed:
-       install Ollama (https://ollama.com), then e.g.: ollama pull qwen3
-
-Keys can also live in ${GLOBAL_CONFIG_FILE}:
-  { "providers": { "openrouter": { "apiKey": "sk-or-..." } } }
-
-Check your setup with: aerin doctor`);
-}
-
 export async function setupAgent(
   flags: Pick<CliFlags, "model" | "yolo" | "continue" | "resume" | "allowOutsideCwd" | "cwd" | "mcp">,
   onPermission: OnPermission,
@@ -117,7 +97,17 @@ export async function setupAgent(
       model = unavailableModel(modelId, reason);
       warnings.push(`${modelId} is unavailable (${reason}). No requests will be made until you pick a model with /model.`);
     } else {
-      throw onboardingError(err);
+      // Keyless first run: never die with a wall of text. Start with the
+      // inert stub and welcome the user into /connect — the TUI opens its
+      // provider picker; print mode still exits cleanly via modelUnavailable.
+      modelUnavailable = "no API keys configured and no local Ollama detected";
+      model = unavailableModel(modelId, modelUnavailable);
+      warnings.push(
+        "Welcome to aerin! No API key found and no local Ollama running. " +
+          "Type /connect to add a provider key, or install Ollama (https://ollama.com) for free local models — " +
+          `keys can also live in ${GLOBAL_CONFIG_FILE} or env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY…). ` +
+          "Check your setup any time with: aerin doctor",
+      );
     }
   }
   let mcpConnections: McpConnection[] = [];

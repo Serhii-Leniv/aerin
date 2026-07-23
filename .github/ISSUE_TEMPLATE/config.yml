@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/Serhii-Leniv/aerin/discussions
+    about: For questions, show-and-tell, and open-ended ideas, use Discussions.

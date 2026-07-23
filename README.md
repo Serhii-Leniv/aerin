@@ -2,24 +2,37 @@
   <img src="https://raw.githubusercontent.com/Serhii-Leniv/aerin/main/docs/assets/aerin-wordmark.svg" alt="AERIN" width="440">
 </p>
 
-<p align="center"><b>Aerin — your open-source coding agent.</b><br/>
-Any model, any provider · real coding tools · autonomous, safely · small enough to read in an afternoon.</p>
+<p align="center"><b>The coding agent you can actually read.</b><br/>
+Every feature the big agents have — sub-agents, undo that covers bash, autonomous goals, hooks, MCP —<br/>
+in ~9k lines of TypeScript with a <a href="docs/index.md">docs page per feature</a> pointing at the source. $0 to start.</p>
+
+<!-- Hero demo GIF: record demo/quickstart.tape with vhs (see demo/README.md), then uncomment:
+<p align="center"><img src="https://raw.githubusercontent.com/Serhii-Leniv/aerin/main/demo/demo.gif" alt="aerin demo" width="820"></p>
+-->
 
 <p align="center">
 <a href="https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml"><img src="https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <a href="https://www.npmjs.com/package/aerin-agent"><img src="https://img.shields.io/npm/v/aerin-agent" alt="npm"></a>
+<a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/src-%3C10k_lines,_CI--enforced-ff5577" alt="line budget"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
 </p>
 
 <p align="center">
 <a href="#install">Install</a> ·
 <a href="#quick-start">Quick start</a> ·
+<a href="#read-the-code">Read the code</a> ·
 <a href="#features">Features</a> ·
 <a href="docs/index.md">Docs</a> ·
 <a href="#configuration">Configuration</a>
 </p>
 
 ---
+
+## Read the code
+
+Aerin's differentiator isn't a feature — it's that you can **understand the whole thing**. The [architecture tour](docs/architecture.md) walks the codebase in 8 stops (~20 minutes): the event-stream contract, the agent loop, the permission gate, shadow-git undo, the context economy, sub-agents, and how it all assembles. Every feature's [docs page](docs/index.md) names its source files and invariants. The `src/` tree stays **under 10,000 lines, CI-enforced** — smallness is a promise, not an accident. If you've ever wanted to know how coding agents actually work, this is the codebase to read — and [to contribute to](CONTRIBUTING.md).
+
+$0 to start, too: keyless web search, local models via Ollama/LM Studio/vLLM, and aerin never auto-selects a paid model on your behalf.
 
 ## Install
 

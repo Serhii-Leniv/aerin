@@ -24,6 +24,14 @@ jobs:
       - run: bun run typecheck
       - run: bun run check:no-bun-globals
         shell: bash
+      # The line budget is a public promise: a full-featured agent under 10k
+      # lines of src/. Features pay line-count rent (see CONTRIBUTING.md).
+      - name: Line budget (src/ < 10000 lines)
+        shell: bash
+        run: |
+          LINES=$(find src -name '*.ts' -o -name '*.tsx' | xargs wc -l | tail -1 | awk '{print $1}')
+          echo "src/ is $LINES lines"
+          test "$LINES" -lt 10000
       - run: bun test
       - run: bun run build
       # Node smoke test: the published artifact must run under plain Node.

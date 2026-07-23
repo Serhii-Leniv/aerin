@@ -1,5 +1,7 @@
 # Aerin knowledge base
 
+**New here? Start with the [architecture tour](architecture.md)** — how a coding agent works, end to end, as a guided reading path through aerin's source.
+
 One page per feature: what it does, how to use it, how it works, and where the code lives. **Agents: read the page for a subsystem before changing it** — each page names the source files and the invariants that must hold.
 
 ## Safety & permissions
