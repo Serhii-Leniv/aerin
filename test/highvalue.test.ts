@@ -147,9 +147,11 @@ describe("session commands core", () => {
       sessionId: "s1",
       cwd: process.cwd(),
     };
-    expect(goalCommand(ctx, "ship it")).toContain("ship it");
+    const armed = goalCommand(ctx, "ship it");
+    expect(armed.message).toContain("ship it");
+    expect(armed.run).toBe("ship it"); // frontends submit this to start the loop
     expect(agent.currentGoal).toBe("ship it");
-    expect(goalCommand(ctx, "clear")).toContain("cleared");
+    expect(goalCommand(ctx, "clear").message).toContain("cleared");
     expect(agent.currentGoal).toBeUndefined();
     expect(togglePlan(ctx)).toBe("plan");
     expect(togglePlan(ctx)).toBe("manual");

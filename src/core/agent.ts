@@ -6,6 +6,7 @@ import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
 import { shouldCompact, compact } from "./compact.js";
 import { modelFamilyGuidance } from "./system-prompt.js";
+import { judgeGoal } from "./goal-judge.js";
 import { Checkpoints } from "./checkpoints.js";
 import { ShadowGit } from "./shadow-git.js";
 import { hookFor, runHook, runPreHook, runPostHook } from "./hooks.js";
@@ -157,6 +158,10 @@ export interface AgentOptions {
   deferredTools?: Map<string, ToolDef>;
   /** Ordered failover chain tried when the active model fails (config fallbackModels). */
   fallbacks?: { modelId: string; resolve: () => LanguageModel }[];
+  /** Turn budget for the /goal loop (default 20). */
+  maxGoalTurns?: number;
+  /** Cheaper model for goal-loop verdicts; lazy so a bad config surfaces as fail-open, not a crash. */
+  getJudgeModel?: () => LanguageModel;
   /**
    * Worker sub-agents share the PARENT's shadow-git via this hook instead of
    * creating their own (two instances on one shadow index would race, and the
@@ -304,14 +309,36 @@ export class Agent {
   }
 
   private goal: string | undefined;
+  /** Remaining autonomous continuations for the /goal loop; 0 = loop disarmed. */
+  private goalTurnsLeft = 0;
 
   /** Pin a user-set session goal into every request's system prompt. */
   setGoal(goal: string | undefined): void {
     this.goal = goal?.trim() || undefined;
+    if (!this.goal) this.goalTurnsLeft = 0;
+  }
+
+  /**
+   * Arm the autonomous goal loop: after each finished turn a judge decides
+   * whether the goal is met; if not, the agent continues on its own, up to
+   * the turn budget. User messages and /goal clear always take precedence.
+   */
+  startGoal(goal: string): void {
+    this.setGoal(goal);
+    this.goalTurnsLeft = this.goal ? (this.opts.maxGoalTurns ?? 20) : 0;
   }
 
   get currentGoal(): string | undefined {
     return this.goal;
+  }
+
+  /** Judge model for goal verdicts: configured cheap model when resolvable, else the active model. */
+  private judgeModel(): LanguageModel {
+    try {
+      return this.opts.getJudgeModel?.() ?? this.activeModel;
+    } catch {
+      return this.activeModel;
+    }
   }
 
   private effectiveSystemPrompt(): string {
@@ -425,6 +452,7 @@ export class Agent {
 
         const toolCalls: { toolCallId: string; toolName: string; input: unknown }[] = [];
         let sawText = false;
+        let turnText = ""; // this iteration's assistant text — the goal judge's evidence
         let result!: ReturnType<typeof streamText>;
 
         // Retry the whole request when the stream dies on a transient provider
@@ -446,6 +474,7 @@ export class Agent {
               if (part.type === "text-delta") {
                 received = true;
                 sawText = true;
+                turnText += part.text;
                 yield { type: "text-delta", text: part.text };
               } else if (part.type === "reasoning-delta") {
                 received = true;
@@ -533,6 +562,45 @@ export class Agent {
           // A mid-turn user message arrived after the model finished its
           // answer — keep the turn alive so it gets addressed now.
           if (this.drainInjected(newMessages)) continue;
+          // Goal loop: a finished turn is judged against the armed goal; if
+          // not done, the agent continues on its own within the turn budget.
+          if (this.goal && this.goalTurnsLeft > 0) {
+            const verdict = await judgeGoal(
+              this.judgeModel(),
+              this.goal,
+              turnText,
+              abort.signal,
+            );
+            if (abort.signal.aborted) {
+              finished = true;
+              break;
+            }
+            this.goalTurnsLeft--;
+            const exhausted = !verdict.done && this.goalTurnsLeft === 0;
+            yield {
+              type: "goal-check",
+              done: verdict.done,
+              reason: exhausted
+                ? `${verdict.reason} — goal turn budget exhausted; /goal again to keep going`
+                : verdict.reason,
+              turnsLeft: this.goalTurnsLeft,
+            };
+            if (verdict.done) {
+              this.setGoal(undefined); // achieved — disarm loop and unpin
+            } else if (!exhausted) {
+              const m: ModelMessage = {
+                role: "user",
+                content:
+                  `[goal check] Not complete yet: ${verdict.reason}\n` +
+                  `Keep working toward the goal: ${this.goal}\n` +
+                  `When it is truly done, state the concrete evidence (test output, diffs, command results).`,
+              };
+              this.messages.push(m);
+              newMessages.push(m);
+              iteration = -1; // fresh tool-iteration budget for the next goal turn
+              continue;
+            }
+          }
           finished = true;
           break;
         }

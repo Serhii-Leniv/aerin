@@ -139,7 +139,7 @@ const SLASH_COMMANDS = [
   { name: "/clear", description: "clear conversation history" },
   { name: "/resume", description: "resume a previous conversation in this directory" },
   { name: "/status", description: "session overview — model, mode, tokens, servers, jobs" },
-  { name: "/goal", description: "pin a session goal — /goal <text>, /goal clear, /goal to show" },
+  { name: "/goal", description: "autonomous goal loop — /goal <text> works until a judge sees it done; /goal clear stops" },
   { name: "/skills", description: "list available skill packs" },
   { name: "/mcp", description: "list connected MCP servers and their tools" },
   { name: "/help", description: "show commands and keys" },
@@ -434,6 +434,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
                 "info",
                 `(${event.from} failed: ${event.message.slice(0, 80)} — continuing on ${event.to})`,
               );
+              break;
+            case "goal-check":
+              pushItem(
+                "info",
+                event.done
+                  ? `✓ goal complete — ${event.reason}`
+                  : `↻ goal continues (${event.turnsLeft} turns left) — ${event.reason}`,
+              );
+              if (event.done) setGoalSet(false);
               break;
             case "subagent-update": {
               if (event.status === "running") {
@@ -734,8 +743,10 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           pushItem("info", mcpCommand(setup));
           return;
         case "/goal": {
-          pushItem("info", goalCommand(setup, arg));
+          const res = goalCommand(setup, arg);
+          pushItem("info", res.message);
           setGoalSet(Boolean(setup.agent.currentGoal));
+          if (res.run) void runTurn(res.run);
           return;
         }
         case "/plan":

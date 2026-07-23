@@ -41,7 +41,7 @@ const HELP = `Commands:
   /model <id>   switch model (any provider/model-id)
   /resume       list previous conversations; /resume <number> to pick one
   /plan         toggle plan mode (read-only exploration, agent presents a plan)
-  /goal [text]  pin a session goal (/goal clear to remove)
+  /goal [text]  autonomous goal loop — works until a judge sees it done (/goal clear stops)
   /status       session overview
   /skills       list available skill packs
   /mcp          list connected MCP servers
@@ -131,6 +131,13 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
             break;
           case "failover":
             stdout.write(`  [${event.from} failed — continuing on ${event.to}]\n`);
+            break;
+          case "goal-check":
+            stdout.write(
+              event.done
+                ? `  [goal complete — ${event.reason}]\n`
+                : `  [goal continues, ${event.turnsLeft} turns left — ${event.reason}]\n`,
+            );
             break;
           case "subagent-update":
             if (event.status !== "running") {
@@ -229,7 +236,9 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
         return undefined;
       }
       if (line === "/goal" || line.startsWith("/goal ")) {
-        stdout.write(goalCommand(setup, line.slice("/goal".length).trim()) + "\n");
+        const res = goalCommand(setup, line.slice("/goal".length).trim());
+        stdout.write(res.message + "\n");
+        if (res.run) await runTurn(res.run);
         return undefined;
       }
       if (line === "/plan") {

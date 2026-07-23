@@ -51,6 +51,11 @@ export async function runPrint(flags: PrintFlags, prompt: string): Promise<void>
         case "failover":
           process.stderr.write(`[failover] ${event.from} -> ${event.to}: ${event.message.slice(0, 120)}\n`);
           break;
+        case "goal-check":
+          process.stderr.write(
+            event.done ? `[goal complete] ${event.reason}\n` : `[goal continues ${event.turnsLeft}] ${event.reason}\n`,
+          );
+          break;
         case "subagent-update":
           if (event.status !== "running") {
             process.stderr.write(

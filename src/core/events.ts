@@ -36,6 +36,8 @@ export type AgentEvent =
   | { type: "retry"; attempt: number; maxAttempts: number; message: string }
   /** The active model failed and the turn continues on a configured fallback. */
   | { type: "failover"; from: string; to: string; message: string }
+  /** /goal loop verdict after a finished turn; turnsLeft 0 with done=false means the budget ran out. */
+  | { type: "goal-check"; done: boolean; reason: string; turnsLeft: number }
   | { type: "error"; message: string };
 
 export type PermissionDecision =

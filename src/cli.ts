@@ -184,6 +184,7 @@ export async function setupAgent(
     configured: config.diagnostics,
     hooks: config.hooks,
   });
+  const subModelId = config.subagentModel;
 
   const agent = new Agent({
     model,
@@ -199,6 +200,8 @@ export async function setupAgent(
     ...(config.hooks && Object.keys(config.hooks).length > 0 ? { hooks: config.hooks } : {}),
     ...(diagnosticsCmd ? { diagnosticsCmd } : {}),
     ...(deferredTools ? { deferredTools } : {}),
+    // Goal-loop verdicts go to the cheaper sub-agent model when one is configured.
+    ...(subModelId ? { getJudgeModel: () => resolveModel(subModelId, config) } : {}),
     // Lazy resolvers: a fallback with no key just gets skipped at failover time.
     ...(config.fallbackModels && config.fallbackModels.length > 0
       ? {
@@ -213,7 +216,6 @@ export async function setupAgent(
   // Registered after construction so the tool tracks /model switches via the
   // live agent. Resolved lazily so a bad subagentModel surfaces as a tool
   // error, not a startup crash.
-  const subModelId = config.subagentModel;
   agent.registerTool(
     createAgentTool({
       getModel: () => ({ model: agent.model, modelId: agent.modelId }),

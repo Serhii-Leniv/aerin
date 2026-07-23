@@ -22,18 +22,28 @@ export interface CommandCtx {
   cwd: string;
 }
 
-export function goalCommand(ctx: CommandCtx, arg: string): string {
+export interface GoalResult {
+  message: string;
+  /** Prompt the frontend should submit to start the autonomous goal loop. */
+  run?: string;
+}
+
+export function goalCommand(ctx: CommandCtx, arg: string): GoalResult {
   if (arg === "clear" || arg === "off") {
     ctx.agent.setGoal(undefined);
-    return "(goal cleared)";
+    return { message: "(goal cleared — autonomous loop stopped)" };
   }
   if (arg) {
-    ctx.agent.setGoal(arg);
-    return `goal pinned: ${arg}`;
+    // Arms the loop: after each finished turn a judge checks the goal and the
+    // agent keeps working until done or the turn budget runs out.
+    ctx.agent.startGoal(arg);
+    return { message: `goal armed — working autonomously until the judge sees it done: ${arg}`, run: arg };
   }
-  return ctx.agent.currentGoal
-    ? `current goal: ${ctx.agent.currentGoal}`
-    : "(no goal set — /goal <text> pins one into every request)";
+  return {
+    message: ctx.agent.currentGoal
+      ? `current goal: ${ctx.agent.currentGoal}`
+      : "(no goal set — /goal <text> starts an autonomous goal loop; /goal clear stops it)",
+  };
 }
 
 export function skillsCommand(ctx: CommandCtx): string {
