@@ -1,35 +1,30 @@
-# Aerin
+```
+ █████╗ ███████╗██████╗ ██╗███╗   ██╗
+██╔══██╗██╔════╝██╔══██╗██║████╗  ██║
+███████║█████╗  ██████╔╝██║██╔██╗ ██║
+██╔══██║██╔══╝  ██╔══██╗██║██║╚██╗██║
+██║  ██║███████╗██║  ██║██║██║ ╚████║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
+```
 
-[![CI](https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml/badge.svg)](https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/aerin-agent)](https://www.npmjs.com/package/aerin-agent)
+<p align="center"><b>Aerin — your open-source coding agent.</b><br/>
+Any model, any provider · real coding tools · autonomous, safely · small enough to read in an afternoon.</p>
 
-An open-source CLI coding agent — in the spirit of Claude Code and opencode, small enough to read in an afternoon.
+<p align="center">
+<a href="https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml"><img src="https://github.com/Serhii-Leniv/aerin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://www.npmjs.com/package/aerin-agent"><img src="https://img.shields.io/npm/v/aerin-agent" alt="npm"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+</p>
 
-> Full feature documentation: [docs/index.md](docs/index.md)
+<p align="center">
+<a href="#install">Install</a> ·
+<a href="#quick-start">Quick start</a> ·
+<a href="#features">Features</a> ·
+<a href="docs/index.md">Docs</a> ·
+<a href="#configuration">Configuration</a>
+</p>
 
-- **Any model, any provider**: Anthropic, OpenAI, Google, OpenRouter (300+ models), xAI/Grok, local Ollama — plus **any OpenAI-compatible endpoint** (DeepSeek, Kimi, Groq, LM Studio, vLLM…) via a two-line config entry. `/model` shows a live, filterable, fuzzy-searchable list with a Recent section; your pick is remembered for the next session. `/connect` adds an API key from inside aerin. Aerin never auto-selects a paid model on your behalf. The system prompt is tuned per model family (GPT, Gemini, open/local models get short addenda targeting their known failure modes), and the tuning follows `/model` switches mid-session.
-- **Real coding tools**: read / write / edit files (CRLF-safe, `+A -R` diff stats), glob, grep (ripgrep-accelerated, finds VS Code's bundled rg too), a shell tool with a proper Windows strategy, and background jobs (`background:true` + `bash_output`) for dev servers and watchers.
-- **Sub-agents**: the `agent` tool delegates research to read-only sub-agents with their own context windows — several run in parallel, each can search the web, and only reports come back. Live status lines, cost folded into the meter, optional cheaper `subagentModel`. With `mode:"worker"` a sub-agent can also edit files and run commands for self-contained tasks: workers see none of the parent conversation (the prompt must carry full context), act under the same permission rules with asks surfacing to you one at a time, write into the same `/undo` snapshot, and can't spawn further agents. Named agents opt in with `mode: worker` frontmatter; a `"deny": ["agent(worker)"]` rule turns workers off entirely.
-- **@file mentions**: type `@src/foo.ts` (fuzzy path autocomplete in the TUI) to attach files to your prompt precisely instead of making the model search.
-- **Autonomous goal loop**: `/goal <text>` keeps the agent working until a small completion judge (~200 tokens/turn, run on your cheaper `subagentModel` when configured) sees concrete evidence — test output, diffs, command results — that the goal is done. Not-done verdicts feed back as steering; the judge fails open (a broken judge never kills the loop), and a 20-turn budget is the hard backstop, leaving the goal pinned for `/goal` resumption. `/goal clear` stops it; your messages always take precedence.
-- **Hooks with a JSON protocol**: config `hooks` run shell commands around tool calls (`"pre:bash"`, `"post:edit"`, `"pre:*"`). Legacy mode: a pre-hook's non-zero exit blocks the call; a post-hook's non-zero output is appended. JSON mode: print `{"decision":"allow"|"deny"|"ask","reason":"...","input":{...}}` from a pre-hook to auto-approve, block, force a prompt, or rewrite the tool's input (re-validated, and still subject to deny rules), or `{"context":"..."}` from a post-hook to inject text into the result. Hooks get the call as JSON on stdin plus `AERIN_TOOL`/`AERIN_TOOL_INPUT` env vars.
-- **Provider failover**: list `"fallbackModels": ["provider/model", ...]` in the config and a mid-turn rate limit, outage, or spent quota rolls onto the next model instead of killing the turn — the chain is walked in order, entries without keys are skipped, per-family prompt tuning and pricing follow the active model, and every turn re-probes your primary first. Auth errors never fail over (fix the key, don't spend elsewhere).
-- **Output spill files**: when a tool result gets truncated (30k chars / 2000 lines, head+tail kept), the complete output is saved to a spill file and the result tells the model to grep it or read it in slices — no more re-running expensive commands to see the middle. 7-day retention, swept automatically.
-- **Post-edit diagnostics**: after every successful write/edit, aerin runs your project's check command and feeds failures straight back to the model, so type errors get fixed immediately instead of at the end. Zero-config when `package.json` has a `typecheck` script (run via your lockfile's package manager); override with `"diagnostics": "<command>"` in the config or disable with `"diagnostics": false`. Worker sub-agents self-correct the same way. Keep the command fast — it runs on every edit.
-- **Bounded memory**: durable facts save to `AGENTS.md`'s `## Memory` section under a hard 2,500-char budget with `add`/`replace`/`remove`. A full memory refuses new adds with the current entries and a consolidate-then-retry instruction — the agent curates its own memory instead of growing it forever.
-- **Session recall**: the `session_search` tool searches this project's past conversations (decisions, fixes, files touched) and reads old transcripts on demand — "like we did last week" actually works.
-- **Undo/redo**: `/undo` reverts the file changes of the last turn — including bash side effects, via a shadow git repo snapshotted before every state-changing tool — and `/redo` re-applies them. Falls back to write-tool-only undo when git isn't installed.
-- **Skills & custom commands**: `.aerin/skills/<name>/SKILL.md` instruction packs the model loads on demand, and `.aerin/commands/<name>.md` prompt templates run as `/name args` (`$ARGUMENTS` substitution). Both also read your existing `.claude/` equivalents — Claude Code-compatible.
-- **Web access**: keyless `websearch` (DuckDuckGo) and `webfetch` (pages as readable text), wrapped in untrusted-content guards.
-- **Plan mode**: `/plan` makes the agent read-only — it explores, presents a numbered plan, and nothing is written or executed until you toggle back (even under `--yolo`).
-- **Task list & clarifying questions**: a live todo checklist in the TUI, and the model can ask you one multiple-choice question when genuinely blocked.
-- **Auto-memory**: durable project facts saved to `AGENTS.md` (`## Memory`) with your approval, loaded into every future session; `AGENTS.md` / `CLAUDE.md` instructions are injected into the system prompt, along with your git branch/status.
-- **Permission gate**: every write and command asks first, with colored diff previews. Approve once, persist an allow-rule per project, or hard-block actions with deny rules that even `--yolo` can't cross. A doom-loop breaker catches the same tool called with identical input 4× in one turn — whatever the tier or mode — and asks before burning more tokens; denying tells the model to change its approach.
-- **Sessions**: JSONL history per directory with human titles — `--continue`, `--resume <id>`, or `/resume` for a picker that replays the conversation — plus automatic context compaction (a structured running summary that gets *updated* on each compaction, with a token-budgeted protected tail), stale tool-output pruning, and a live context/cost meter.
-- **Reliability**: transient provider errors retry with backoff (daily quotas fail fast); Anthropic prompt caching cuts input cost on every agentic iteration.
-- **Deferred MCP tools**: when connected servers would flood the context with tool schemas (>10% of the window), aerin swaps them for three bridge tools — `tool_search` / `tool_describe` / `tool_call` — a few hundred tokens instead of tens of thousands, at the cost of one extra round trip when a tool is used. Permissions and deny rules apply to the real tool exactly as if called directly. Force with `"deferMcpTools": true/false`.
-- **MCP client**: paste your existing `mcpServers` config (stdio and HTTP servers) and their tools appear in the agent.
-- **Terminal UI**: full-screen Ink TUI (alt-screen; your shell scrollback survives, and the transcript is printed on exit) with Claude Code-style output, streamed markdown, PgUp/PgDn scrolling, multi-line input (paste or `\`+Enter), interactive `/help`, and a status bar — plus `--no-tui` (plain REPL) and `-p` (headless: `cat log | aerin -p "why?"`).
+---
 
 ## Install
 
@@ -37,9 +32,7 @@ An open-source CLI coding agent — in the spirit of Claude Code and opencode, s
 npm install -g aerin-agent     # or: npx aerin-agent
 ```
 
-The installed command is `aerin`.
-
-Requires Node 20+.
+The installed command is `aerin`. Requires Node 20+.
 
 ## Quick start
 
@@ -60,24 +53,42 @@ aerin -m google/gemini-flash-latest
 aerin -m ollama/llama3.1               # local, no key needed
 ```
 
+## Features
+
+Every feature has a page in the [docs knowledge base](docs/index.md) with mechanics, invariants, and source pointers.
+
+- **[Any model, any provider](docs/model-families.md)** — Anthropic, OpenAI, Google, OpenRouter, xAI, local Ollama, plus any OpenAI-compatible endpoint via a two-line config entry. The system prompt is tuned per model family and follows `/model` switches; aerin never auto-selects a paid model.
+- **[Real coding tools](docs/tools.md)** — read/write/edit (CRLF-safe), glob, ripgrep-accelerated grep, a shell with a proper Windows strategy, background jobs, keyless web search/fetch.
+- **[Sub-agents](docs/subagents.md)** — read-only researchers with their own context windows, write-capable workers under your permission rules, and named custom agents from markdown files.
+- **[Autonomous goal loop](docs/goal-loop.md)** — `/goal <text>` keeps working until an evidence-based judge sees it done: fail-open, turn-budgeted, steered by not-done verdicts.
+- **[Permissions](docs/permissions.md)** — read/write/execute tiers, allow rules as prefix globs, deny rules that beat everything (even `--yolo`), and a [doom-loop breaker](docs/doom-loop.md) that interrupts identical-call retry spirals.
+- **[Undo & redo](docs/undo-redo.md)** — `/undo` reverts the last turn's file changes *including bash side effects* via a shadow git repo; `/redo` walks forward.
+- **[Hooks](docs/hooks.md)** — shell hooks around tool calls with a JSON protocol (allow/deny/ask, input rewrite, context injection) plus lifecycle events: `session:start`, `prompt:submit`, `turn:end` (a stop-gate that can demand more work), `compact:pre`, `session:end`.
+- **[Provider failover](docs/provider-failover.md)** — rate limits, outages, and spent quotas roll onto the next `fallbackModels` entry mid-turn instead of killing it.
+- **[Post-edit diagnostics](docs/diagnostics.md)** — your typecheck runs after every edit and failures feed straight back; zero-config with a `typecheck` script.
+- **[Bounded memory](docs/memory.md)** — durable facts in `AGENTS.md` under a hard 2,500-char budget; a full memory forces consolidation instead of growing forever.
+- **[Sessions](docs/sessions.md) & [recall](docs/session-search.md)** — JSONL history with `--continue`/`/resume`, [compaction](docs/compaction.md) that *updates* a structured running summary, and a `session_search` tool over past conversations.
+- **[Spill files](docs/spill-files.md)** — truncated tool output is saved in full for grepping/slicing instead of re-running commands.
+- **[MCP](docs/mcp.md)** — paste your `mcpServers` config and the tools appear; [deferred loading](docs/deferred-mcp-tools.md) keeps big servers from flooding the context.
+- **[Skills & custom commands](docs/skills-and-commands.md)** — instruction packs and `/name` prompt templates, Claude Code-compatible (`.claude/` layouts are read too).
+- **Terminal UI** — full-screen Ink TUI with streamed markdown, in-app scrolling, multi-line input, `@file` fuzzy autocomplete, `/` command suggestions, live todo checklist, diff previews, and a context/cost meter — plus `--no-tui` (REPL) and `-p` (headless). Plan mode (`/plan`) makes everything read-only until you approve.
+
 ## Configuration
 
-Global: `~/.config/aerin/config.json` (platform-appropriate). Per-project: `.aerin/settings.json`.
+Global: `~/.config/aerin/config.json` (platform-appropriate). Per-project: `.aerin/settings.json`. Full reference: [docs/configuration.md](docs/configuration.md).
 
 ```json
 {
   "model": "anthropic/claude-opus-4-8",
   "subagentModel": "anthropic/claude-haiku-4-5",
+  "fallbackModels": ["openrouter/deepseek/deepseek-chat"],
   "providers": {
     "openrouter": { "apiKey": "sk-or-..." },
-    "xai": { "apiKey": "xai-..." },
     "deepseek": { "baseURL": "https://api.deepseek.com/v1", "apiKey": "sk-..." },
-    "lmstudio": { "baseURL": "http://localhost:1234/v1" },
     "ollama": { "baseURL": "http://localhost:11434/v1" }
   },
   "mcpServers": {
-    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] },
-    "remote": { "url": "https://example.com/mcp" }
+    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
   },
   "permissions": {
     "allow": ["bash(git *)", "write(src/*)", "mcp__github__*"],
@@ -86,23 +97,13 @@ Global: `~/.config/aerin/config.json` (platform-appropriate). Per-project: `.aer
 }
 ```
 
-Any provider name that isn't built in but has a `baseURL` is served through the OpenAI-compatible adapter — that one mechanism covers DeepSeek, Kimi, Groq, Cerebras, Together, Fireworks, LM Studio, vLLM, and friends. `/model` discovers their model lists from `baseURL/models`.
+Any provider name that isn't built in but has a `baseURL` is served through the OpenAI-compatible adapter — one mechanism covers DeepSeek, Kimi, Groq, Cerebras, Together, Fireworks, LM Studio, vLLM, and friends.
 
 Never put API keys in the *project* config — it gets committed. Use env vars, the global config, or `/connect` inside aerin.
 
 ## Permission rules
 
-Three tiers: reads are always allowed; writes and commands ask. Rules are simple prefix globs:
-
-| Rule | Meaning |
-|---|---|
-| `bash(git *)` | any git command |
-| `write(src/*)` | writes under `src/` |
-| `mcp__github__*` | all tools from the github MCP server |
-
-Choosing **"Yes, always for this project"** in a prompt appends a rule to `.aerin/settings.json`. `--yolo` skips all prompts (use with care).
-
-A `deny` list uses the same syntax and beats everything — allow rules, accept mode, even `--yolo`. Denies also apply to read-tier tools (`"read(*.pem*)"`), and bash denies are matched against each segment of chained commands, so `bash(rm *)` catches `git pull && rm -rf x`. The agent is told which rule blocked it and not to work around it.
+Reads are always allowed; writes and commands ask. Rules are simple prefix globs — `bash(git *)`, `write(src/*)`, `mcp__github__*` — persisted per project when you choose "always". A `deny` list beats everything, applies to read-tier too, and matches each segment of chained bash commands. Details: [docs/permissions.md](docs/permissions.md).
 
 ## Development
 
@@ -114,7 +115,7 @@ bun run dev         # run from source
 bun run build       # dist/ via tsdown
 ```
 
-The core (`src/core`, `src/tools`, …) never imports Ink/React — the TUI is one of three frontends over the same `AsyncIterable<AgentEvent>` stream, which keeps everything testable headless.
+The core (`src/core`, `src/tools`, …) never imports Ink/React — the TUI is one of three frontends over the same `AsyncIterable<AgentEvent>` stream, which keeps everything testable headless. Agent contributors: start at [AGENTS.md](AGENTS.md) and [docs/index.md](docs/index.md).
 
 ## License
 
