@@ -6,6 +6,7 @@ import { persistProjectRule } from "../config/config.js";
 import { estimateCostUsd } from "../providers/models.js";
 import { shouldCompact, compact } from "./compact.js";
 import { Checkpoints } from "./checkpoints.js";
+import { ShadowGit } from "./shadow-git.js";
 import { hookFor, runHook } from "./hooks.js";
 import path from "node:path";
 import type { SessionStore } from "../session/store.js";
@@ -148,7 +149,10 @@ export class Agent {
   totalOutputTokens = 0;
   totalCostUsd = 0;
   private currentAbort: AbortController | undefined;
+  /** Fallback undo when git is unavailable — write-tool paths only. */
   private checkpoints = new Checkpoints();
+  /** Shadow-git undo/redo; created lazily on the first state-changing tool. undefined = not tried, null = git unusable. */
+  private shadow: ShadowGit | null | undefined;
 
   constructor(private opts: AgentOptions) {
     this.messages = [...(opts.initialMessages ?? [])];
@@ -200,7 +204,13 @@ export class Agent {
 
   /** Undo the file changes of the most recent turn that changed anything. */
   async undo(): Promise<string[]> {
+    if (this.shadow) return this.shadow.undoLastChange();
     return this.checkpoints.undoLastChange();
+  }
+
+  /** Re-apply the changes reverted by the most recent /undo (shadow git only). */
+  async redo(): Promise<string[]> {
+    return this.shadow ? this.shadow.redoLastUndo() : [];
   }
 
   private injected: string[] = [];
@@ -316,6 +326,7 @@ export class Agent {
     newMessages.push(userMessage);
     await this.opts.store?.ensureTitle(input);
     this.checkpoints.beginTurn();
+    this.shadow?.beginTurn();
 
     const toolCtx: ToolContext = {
       cwd: this.opts.cwd,
@@ -615,11 +626,18 @@ export class Agent {
       }
     }
 
-    // Capture the file's pre-change state so /undo can restore this turn.
-    if (def.permission === "write") {
-      const p = (input as { path?: unknown })?.path;
-      if (typeof p === "string" && p) {
-        await this.checkpoints.record(path.resolve(this.opts.cwd, p)).catch(() => {});
+    // Capture pre-change state so /undo can restore this turn. The shadow-git
+    // snapshot runs before write AND execute tools, so bash/MCP side effects
+    // are covered; without git we fall back to per-file capture on write tools.
+    if (def.permission !== "read") {
+      if (this.shadow === undefined) this.shadow = await ShadowGit.create(this.opts.cwd);
+      if (this.shadow) {
+        await this.shadow.snapshotIfNeeded();
+      } else if (def.permission === "write") {
+        const p = (input as { path?: unknown })?.path;
+        if (typeof p === "string" && p) {
+          await this.checkpoints.record(path.resolve(this.opts.cwd, p)).catch(() => {});
+        }
       }
     }
 

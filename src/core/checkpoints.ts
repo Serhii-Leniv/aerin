@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 
 /**
- * Per-session undo for file changes made by write-tier tools. Before a tool
- * touches a file for the first time in a turn, its original content (or its
- * absence) is captured in memory; /undo restores the most recent turn that
- * changed anything. Bash side effects are NOT captured — only files written
- * through the write/edit/memory tools.
+ * FALLBACK undo, used only when git is unavailable (see core/shadow-git.ts,
+ * the primary mechanism). Before a write-tier tool touches a file for the
+ * first time in a turn, its original content (or its absence) is captured in
+ * memory; /undo restores the most recent turn that changed anything. Bash
+ * side effects are NOT captured here — only files written through the
+ * write/edit/memory tools — and /redo is not supported.
  */
 export class Checkpoints {
   /** One map per turn: absolute path -> original content, or null if the file did not exist. */

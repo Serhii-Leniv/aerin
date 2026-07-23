@@ -16,6 +16,7 @@ import {
   statusCommand,
   togglePlan,
   undoCommand,
+  redoCommand,
 } from "../core/session-commands.js";
 import { allKnownModels, modelInfo } from "../providers/models.js";
 import { PROVIDERS, providersWithKeys, resolveApiKey } from "../providers/registry.js";
@@ -125,7 +126,8 @@ interface PendingPermission {
 const SLASH_COMMANDS = [
   { name: "/model", description: "switch model — pick from a live list, or /model provider/id" },
   { name: "/plan", description: "toggle plan mode — read-only exploration, agent presents a plan" },
-  { name: "/undo", description: "revert the file changes of the last turn" },
+  { name: "/undo", description: "revert the file changes of the last turn (incl. bash side effects)" },
+  { name: "/redo", description: "re-apply changes reverted by /undo" },
   { name: "/connect", description: "connect a provider — catalog of 14 + custom endpoints" },
   { name: "/compact", description: "summarize the conversation to free context" },
   { name: "/clear", description: "clear conversation history" },
@@ -679,6 +681,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
         case "/undo":
           pushItem("info", await undoCommand(setup));
+          return;
+        case "/redo":
+          pushItem("info", await redoCommand(setup));
           return;
         case "/connect": {
           const [prov, key] = arg.split(/\s+/);

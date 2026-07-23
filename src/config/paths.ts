@@ -16,7 +16,15 @@ export function projectSettingsFile(cwd: string): string {
   return path.join(projectConfigDir(cwd), "settings.json");
 }
 
+function projectHash(cwd: string): string {
+  return crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 12);
+}
+
 export function sessionsDir(cwd: string): string {
-  const hash = crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 12);
-  return path.join(DATA_DIR, "sessions", hash);
+  return path.join(DATA_DIR, "sessions", projectHash(cwd));
+}
+
+/** Shadow git repo for /undo snapshots — lives in the data dir, never inside the project. */
+export function shadowGitDir(cwd: string): string {
+  return path.join(DATA_DIR, "shadow", projectHash(cwd));
 }

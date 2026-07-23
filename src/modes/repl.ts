@@ -19,6 +19,7 @@ import {
   statusCommand,
   togglePlan,
   undoCommand,
+  redoCommand,
 } from "../core/session-commands.js";
 import { expandMentions } from "../core/mentions.js";
 
@@ -44,7 +45,8 @@ const HELP = `Commands:
   /status       session overview
   /skills       list available skill packs
   /mcp          list connected MCP servers
-  /undo         revert the file changes of the last turn
+  /undo         revert the file changes of the last turn (incl. bash side effects)
+  /redo         re-apply changes reverted by /undo
   /connect <provider> <key>   save a provider API key to the global config
   /exit         quit
 Anything else is sent to the agent. Ctrl+C interrupts a running turn.`;
@@ -174,6 +176,10 @@ export async function runRepl(flags: ReplFlags, initialPrompt?: string): Promise
       }
       if (line === "/undo") {
         stdout.write(`  ${await undoCommand(setup)}\n`);
+        return undefined;
+      }
+      if (line === "/redo") {
+        stdout.write(`  ${await redoCommand(setup)}\n`);
         return undefined;
       }
       if (line.startsWith("/connect")) {

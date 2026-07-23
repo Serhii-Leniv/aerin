@@ -60,7 +60,14 @@ export async function undoCommand(ctx: CommandCtx): Promise<string> {
   const restored = await ctx.agent.undo();
   if (restored.length === 0) return "(nothing to undo — no file changes recorded this session)";
   const rel = restored.map((p) => (p.startsWith(ctx.cwd) ? p.slice(ctx.cwd.length + 1) : p));
-  return `(reverted ${restored.length} file${restored.length === 1 ? "" : "s"}: ${rel.join(", ").slice(0, 120)})`;
+  return `(reverted ${restored.length} file${restored.length === 1 ? "" : "s"}: ${rel.join(", ").slice(0, 120)} — /redo re-applies)`;
+}
+
+export async function redoCommand(ctx: CommandCtx): Promise<string> {
+  const restored = await ctx.agent.redo();
+  if (restored.length === 0) return "(nothing to redo — /redo only re-applies changes reverted by /undo)";
+  const rel = restored.map((p) => (p.startsWith(ctx.cwd) ? p.slice(ctx.cwd.length + 1) : p));
+  return `(re-applied ${restored.length} file${restored.length === 1 ? "" : "s"}: ${rel.join(", ").slice(0, 120)})`;
 }
 
 export function togglePlan(ctx: CommandCtx): PermissionMode {
