@@ -423,8 +423,8 @@ export class Agent {
         this.lastInputTokens = inTok;
         this.totalInputTokens += inTok;
         this.totalOutputTokens += outTok;
-        // Projected cost, Groq-console-style: computed even on free tiers
-        // (frontends label it "not billed" for freeTier providers).
+        // Projected cost from live pricing; free-tier providers return
+        // undefined so no money is ever counted or shown for them.
         const cost = estimateCostUsd(this.opts.modelId, inTok, outTok);
         if (cost !== undefined) this.totalCostUsd += cost;
         yield { type: "usage", inputTokens: inTok, outputTokens: outTok, costUsd: cost };

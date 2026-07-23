@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Agent } from "../core/agent.js";
 import type { OnPermission, PermissionDecision, PermissionRequest } from "../core/events.js";
@@ -28,7 +28,6 @@ import type { AskUser } from "../tools/question-tool.js";
 import type { TodoItem } from "../tools/todo-tool.js";
 import type { PermissionMode, PermissionPolicy } from "../permissions/policy.js";
 import { renderMarkdown } from "../terminal/markdown.js";
-import { wrapAnsiLine } from "../terminal/wrap-ansi.js";
 import { colorizeDiff, messageText, redactSecrets, relativeTime, setTerminalTitle } from "../terminal/format.js";
 import { expandMentions } from "../core/mentions.js";
 import { DiffText, FilterSelect, LineInput, SelectList, Spinner } from "./components/widgets.js";
@@ -52,20 +51,20 @@ export interface TuiSetup {
   config: AerinConfig;
   /** Set when startup could not resolve a model; forces the picker open first. */
   modelUnavailable?: string;
-  /** Emits "wheel" (+1 down / -1 up) from the terminal mouse — set by run.tsx. */
-  mouse?: import("node:events").EventEmitter;
 }
 
 /**
- * Ink rendering rules baked in here:
- * - Full-screen app on the alternate screen buffer (opencode-style): a fixed
- *   height/width root, a pinned header, a flex-grown transcript viewport with
- *   overflow hidden + justifyContent flex-end (newest content sticks to the
- *   bottom, old lines clip at the top), and a bottom section (dialogs, input,
- *   status) whose height the layout engine subtracts automatically. No
- *   <Static>, no spacer math — Yoga owns the geometry, so nothing drifts.
- * - Only the last VIEWPORT_ITEMS transcript items render (older ones are
- *   clipped anyway); that bounds per-frame work.
+ * Ink rendering rules baked in here (Claude Code-style):
+ * - No alternate screen, no app-level scrolling. The transcript is printed
+ *   permanently into the terminal's normal scrollback via <Static> — each
+ *   item renders exactly once and then belongs to the terminal, so the mouse
+ *   wheel / Shift+PgUp scroll natively (smooth, no capture) while new output
+ *   keeps flowing in at the bottom.
+ * - Only the live tail is re-rendered each frame: streaming text (clamped to
+ *   the last screenful), spinner, dialogs, input, status. Keeping this region
+ *   smaller than the window keeps Ink on its incremental line-diff path.
+ * - /clear wipes the terminal (2J/3J) and remounts <Static> via a key bump so
+ *   the fresh banner re-prints from a zeroed item counter.
  * - Stream re-renders are batched to ~50ms, never per-token setState.
  * - Raw mode eats Ctrl+C, so double-Ctrl+C-to-exit is implemented explicitly.
  */
@@ -75,9 +74,6 @@ interface TranscriptItem {
   kind: "user" | "assistant" | "tool" | "tool-error" | "info" | "error";
   text: string;
 }
-
-/** Only this many trailing items are rendered — everything above is clipped anyway. */
-const VIEWPORT_ITEMS = 150;
 
 /** Picker rows: a Recent section first (opencode-style), then one group per provider. */
 function buildPickerItems(
@@ -198,6 +194,12 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
+/** Last `max` lines of a block — keeps the live streaming frame inside the window. */
+function tailLines(s: string, max: number): string {
+  const lines = s.split("\n");
+  return lines.length <= max ? s : lines.slice(-max).join("\n");
+}
+
 export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.ReactElement {
   const { setup } = props;
   const { exit } = useApp();
@@ -212,11 +214,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       stdout?.off("resize", onResize);
     };
   }, [stdout]);
-  // One row short of the terminal: at full height Ink switches to a
-  // clear-terminal-per-frame fullscreen path, which visibly flickers on every
-  // keystroke. One spare row keeps it on the incremental line-diff path.
-  const usableRows = Math.max(10, size.rows - 1);
-
   // The startup banner is transcript content, not chrome (Claude Code-style):
   // it scrolls away as the conversation grows and reappears on /clear.
   // Synthwave sunset: the wordmark fades row by row from bright pink down
@@ -260,7 +257,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const [modelId, setModelId] = useState(setup.modelId);
   const [recentModels, setRecentModels] = useState<string[]>(setup.config.recentModels ?? []);
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
-  const [scrollOffset, setScrollOffset] = useState(0); // lines scrolled back from the live bottom
+  const [staticKey, setStaticKey] = useState(0); // bumped on /clear to remount <Static> after wiping the screen
   const [queued, setQueued] = useState<string[]>([]); // messages typed while the agent was working
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -281,7 +278,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   const lastSummaryRef = useRef<string | null>(null);
 
   const pushItem = useCallback((kind: TranscriptItem["kind"], text: string) => {
-    if (kind === "user") setScrollOffset(0); // your own message — jump back to live
     setItems((prev) => [...prev, { key: nextKey.current++, kind, text }]);
   }, []);
 
@@ -325,93 +321,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Flat VISUAL-row buffer of the transcript — the unit of scrolling. Long
-  // lines are pre-wrapped (ANSI-aware) to the terminal width so one scroll
-  // step is one terminal row, matching the live view. Blank lines reproduce
-  // the item margins.
-  const [viewportH, setViewportH] = useState(10);
-  const flatLines = React.useMemo(() => {
-    const width = Math.max(20, size.columns - 2);
-    const lines: { key: string; kind: TranscriptItem["kind"]; text: string }[] = [];
-    for (const item of items) {
-      item.text.split("\n").forEach((line, i) => {
-        const prefixed = item.kind === "user" && i === 0 ? `❯ ${line}` : line;
-        wrapAnsiLine(prefixed, width).forEach((row, j) => {
-          lines.push({ key: `${item.key}:${i}:${j}`, kind: item.kind, text: row });
-        });
-      });
-      if (item.kind === "assistant" || item.kind === "user") {
-        lines.push({ key: `${item.key}:m`, kind: "info", text: "" });
-      }
-    }
-    return lines;
-  }, [items, size.columns]);
-  const flatLinesRef = useRef(flatLines);
-  flatLinesRef.current = flatLines;
-  const viewportHRef = useRef(viewportH);
-  viewportHRef.current = viewportH;
-
-  // Anchor the view while scrolled back: as new lines stream in below, grow
-  // the offset by the same amount so the text on screen doesn't shift. At the
-  // bottom (offset 0) we keep following live output. Shrinking transcripts
-  // (/clear, /compact) clamp the offset back into range.
-  const prevLineCountRef = useRef(0);
-  useEffect(() => {
-    const delta = flatLines.length - prevLineCountRef.current;
-    prevLineCountRef.current = flatLines.length;
-    if (delta === 0) return;
-    setScrollOffset((o) => {
-      if (o === 0) return 0;
-      const max = Math.max(0, flatLines.length - Math.max(4, viewportHRef.current));
-      return Math.min(max, Math.max(0, o + delta));
-    });
-  }, [flatLines.length]);
-
-  const scrollBy = useCallback((deltaLines: number) => {
-    setScrollOffset((o) => {
-      const lines = flatLinesRef.current;
-      const max = Math.max(0, lines.length - Math.max(4, viewportHRef.current));
-      // Trailing blank margin rows carry no content — the first upward step
-      // hops past them (otherwise a wheel notch "scrolls" only blanks and
-      // looks dead), and scrolling back down inside them snaps to live.
-      let blanks = 0;
-      while (blanks < lines.length && lines[lines.length - 1 - blanks]!.text === "") blanks++;
-      let next = o + deltaLines;
-      if (o === 0 && deltaLines > 0) next += blanks;
-      else if (deltaLines < 0 && next <= blanks) next = 0;
-      return Math.min(max, Math.max(0, next));
-    });
-  }, []);
-
-  // Mouse wheel scrolls the transcript one row per event (a notch is ~3
-  // events — native terminal feel). Events are coalesced on a ~16ms frame so
-  // a fast spin applies as a few larger hops instead of queueing dozens of
-  // renders that keep playing after the wheel stops. Pickers own the wheel.
-  const pickerOpenRef = useRef(false);
-  const wheelAcc = useRef(0);
-  const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const m = setup.mouse;
-    if (!m) return;
-    const onWheel = (dir: number): void => {
-      if (pickerOpenRef.current) return;
-      wheelAcc.current += dir < 0 ? 1 : -1;
-      wheelTimer.current ??= setTimeout(() => {
-        wheelTimer.current = null;
-        const delta = wheelAcc.current;
-        wheelAcc.current = 0;
-        if (delta !== 0) scrollBy(delta);
-      }, 16);
-    };
-    m.on("wheel", onWheel);
-    return () => {
-      m.off("wheel", onWheel);
-      if (wheelTimer.current) clearTimeout(wheelTimer.current);
-      wheelTimer.current = null;
-      wheelAcc.current = 0;
-    };
-  }, [setup.mouse, scrollBy]);
 
   // Wire the agent's permission and question callbacks to the dialogs.
   useEffect(() => {
@@ -749,7 +658,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               "  Tab          complete /commands and @file paths",
               "  Home/End · Ctrl+←/→   cursor jumps (words, line edges)",
               "  \\ + Enter    insert a newline (Alt+Enter too)",
-              "  PgUp/PgDn    scroll the transcript (mouse wheel works)",
+              "  scrolling    your terminal's own scrollback — wheel or Shift+PgUp",
               "  @path        attach a file to your message",
               "  Ctrl+C ×2    quit",
             ].join("\n"),
@@ -758,8 +667,11 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         }
         case "/clear": {
           await setup.agent.clear();
+          // Wipe screen AND scrollback, then remount <Static> so the fresh
+          // banner re-prints from a zeroed item counter.
+          stdout?.write("\x1b[2J\x1b[3J\x1b[H");
           setItems([bannerItem(modelId, nextKey.current++)]); // fresh start looks like startup
-          setScrollOffset(0);
+          setStaticKey((k) => k + 1);
           setCtxTokens(0);
           setStats({ inTok: 0, outTok: 0, cost: 0 });
           setTodos([]);
@@ -789,7 +701,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               contextWindow: modelInfo(modelId).contextWindow,
               ctxTokens,
               cwdDisplay: shortenPath(setup.cwd, 60),
-              costLine: `${fmtTokens(stats.inTok)}↑ ${fmtTokens(stats.outTok)}↓${stats.cost > 0 ? ` · $${stats.cost.toFixed(4)}${freeTier ? " (free tier — not billed)" : ""}` : ""}`,
+              costLine: `${fmtTokens(stats.inTok)}↑ ${fmtTokens(stats.outTok)}↓${freeTier ? " · free tier — not billed" : stats.cost > 0 ? ` · $${stats.cost.toFixed(4)}` : ""}`,
               ...(latestVersion ? { latestVersion } : {}),
               jobsLine:
                 running.length > 0
@@ -931,7 +843,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     setQuestionOther(false);
   }, []);
 
-  // Global keys: Esc interrupts; Shift+Tab cycles modes; PgUp/PgDn scroll; double Ctrl+C exits.
+  // Global keys: Esc interrupts; Shift+Tab cycles modes; double Ctrl+C exits.
   useInput((input, key) => {
     if (key.ctrl && input === "o") {
       const last = lastToolResultRef.current;
@@ -947,14 +859,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       // manual → accept edits → plan → manual (Claude Code order).
       // The status-bar badge and input border announce the mode — no chat spam.
       setMode(cycleMode(setup));
-      return;
-    }
-    if (key.pageUp) {
-      scrollBy(Math.max(3, viewportHRef.current - 2));
-      return;
-    }
-    if (key.pageDown) {
-      scrollBy(-Math.max(3, viewportHRef.current - 2));
       return;
     }
     if (key.escape && workingRef.current) {
@@ -997,75 +901,20 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
   // submitted mid-turn are queued and sent when the turn finishes. Only modal
   // dialogs take the input away.
   const inputActive = !permission && !modelPicker && !sessionPicker && !question && !connect;
-  pickerOpenRef.current = Boolean(
-    (modelPicker && modelPicker !== "loading") || sessionPicker || connect?.step === "pick",
-  );
 
   const allCommands = [
     ...SLASH_COMMANDS,
     ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: c.description })),
   ];
 
-  // Transcript alignment: content flows from the top (Claude Code-style) while
-  // it fits; once it outgrows the viewport it bottom-aligns so the newest line
-  // stays visible above the input and old lines clip at the top.
-  const viewportRef = useRef<DOMElement | null>(null);
-  const contentRef = useRef<DOMElement | null>(null);
-  const [overflowing, setOverflowing] = useState(false);
-  useEffect(() => {
-    const v = viewportRef.current ? measureElement(viewportRef.current).height : 0;
-    const c = contentRef.current ? measureElement(contentRef.current).height : 0;
-    const next = v > 0 && c > v;
-    setOverflowing((prev) => (prev === next ? prev : next));
-    if (v > 0) setViewportH((prev) => (prev === v ? prev : v));
-  });
-
   return (
-    <Box flexDirection="column" height={usableRows} width={size.columns}>
-      {/* Transcript viewport: top-aligned while content fits; once it
-          overflows, newest content sticks to the bottom and old lines clip
-          away at the top. */}
-      <Box
-        ref={viewportRef}
-        flexDirection="column"
-        flexGrow={1}
-        overflowY="hidden"
-        justifyContent={overflowing && scrollOffset === 0 ? "flex-end" : "flex-start"}
-      >
-        {scrollOffset > 0 ? (
-          // History mode: an exact line window over the transcript.
-          (() => {
-            const end = Math.max(0, flatLines.length - scrollOffset);
-            const start = Math.max(0, end - viewportH);
-            return flatLines.slice(start, end).map((l) => (
-              <Box key={l.key} flexShrink={0}>
-                <Text
-                  wrap="truncate-end"
-                  color={
-                    l.kind === "user"
-                      ? C.accent
-                      : l.kind === "error" || l.kind === "tool-error"
-                        ? C.error
-                        : l.kind === "info"
-                          ? C.dim
-                          : undefined
-                  }
-                >
-                  {l.text || " "}
-                </Text>
-              </Box>
-            ));
-          })()
-        ) : (
-        <Box ref={contentRef} flexDirection="column" flexShrink={0}>
-        {items
-          .slice(-VIEWPORT_ITEMS)
-          .map((item) => (
-          <Box
-            key={item.key}
-            marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}
-            flexShrink={0}
-          >
+    <>
+      {/* The transcript lives in the terminal's own scrollback: each item is
+          printed exactly once by <Static> and never re-rendered, so native
+          wheel scrolling stays smooth and output keeps flowing below. */}
+      <Static key={staticKey} items={items}>
+        {(item) => (
+          <Box key={item.key} marginBottom={item.kind === "assistant" || item.kind === "user" ? 1 : 0}>
             <Text
               color={
                 item.kind === "user"
@@ -1080,10 +929,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
               {item.kind === "user" ? `❯ ${item.text}` : item.text}
             </Text>
           </Box>
-        ))}
+        )}
+      </Static>
+
+      {/* Live tail: everything below re-renders each frame and must stay
+          shorter than the window to keep Ink on its line-diff path. */}
+      <Box flexDirection="column">
       {streaming ? (
         <Box flexShrink={0}>
-          <Text>{streaming}</Text>
+          <Text>{tailLines(streaming, Math.max(6, size.rows - 10))}</Text>
         </Box>
       ) : null}
       {thinking && reasoningTail ? (
@@ -1122,12 +976,8 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           />
         </Box>
       ) : null}
-        </Box>
-        )}
-      </Box>
 
-      {/* Bottom section: dialogs, input, status — pinned by layout. */}
-      <Box flexDirection="column" flexShrink={0}>
+      {/* Dialogs, input, status. */}
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor={C.warn} paddingX={1}>
           <Text color={C.warn}>Permission: {permission.req.summary}</Text>
@@ -1208,7 +1058,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Connect a provider — type to filter, Enter to pick, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={[
               { label: "Featured", value: "__header_featured", header: true },
               ...PROVIDER_CATALOG.map((e) => ({
@@ -1330,7 +1179,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Pick a model (current: {modelId}) — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={buildPickerItems(modelPicker, recentModels, modelId)}
             onCancel={() => setModelPicker(null)}
             onSelect={(id) => {
@@ -1346,7 +1194,6 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.accent}>Resume a conversation — type to filter, Esc to cancel</Text>
           <FilterSelect
             active={true}
-            {...(setup.mouse ? { wheel: setup.mouse } : {})}
             items={sessionPicker.map((s) => ({
               label: `${relativeTime(s.createdAt).padEnd(11)} ${String(s.messageCount).padStart(3)} msg  ${s.title ?? "(no prompt yet)"}`,
               value: s.id,
@@ -1415,18 +1262,15 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
           <Text color={C.dim}>
             {" · "}
             {fmtTokens(stats.inTok)}↑ {fmtTokens(stats.outTok)}↓
-            {stats.cost > 0
-              ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}${catalogEntry(modelId.split("/")[0] ?? "")?.freeTier ? " (free tier — not billed)" : ""}`
-              : ""}
+            {stats.cost > 0 ? ` · $${stats.cost.toFixed(stats.cost < 0.1 ? 4 : 2)}` : ""}
           </Text>
           {goalSet ? <Text color={C.accent}> · goal</Text> : null}
           {planMode ? <Text color={C.magenta}> · plan (shift+tab)</Text> : null}
           {mode === "accept" ? <Text color={C.ok}>{" · >> accept edits (shift+tab)"}</Text> : null}
-          {scrollOffset > 0 ? <Text color={C.warn}> · ↑ scrolled (PgDn)</Text> : null}
           {exitArmed ? <Text color={C.error}> · Ctrl+C again to exit</Text> : null}
         </Text>
       </Box>
       </Box>
-    </Box>
+    </>
   );
 }

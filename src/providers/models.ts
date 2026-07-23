@@ -4,6 +4,8 @@
  * live registries (models.dev, provider list APIs) — never hardcoded.
  */
 
+import { catalogEntry } from "./catalog.js";
+
 export interface ModelInfo {
   contextWindow: number;
   maxOutput: number;
@@ -50,6 +52,8 @@ export function estimateCostUsd(
   inputTokens: number,
   outputTokens: number,
 ): number | undefined {
+  // Free-tier providers never bill — counting money there is just confusing.
+  if (catalogEntry(modelId.split("/")[0] ?? "")?.freeTier) return undefined;
   const info = knownModelInfo(modelId);
   if (!info || info.inputPerMTok === undefined || info.outputPerMTok === undefined) return undefined;
   return (inputTokens / 1e6) * info.inputPerMTok + (outputTokens / 1e6) * info.outputPerMTok;

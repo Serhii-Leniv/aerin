@@ -1,12 +1,9 @@
 import React from "react";
 import { render } from "ink";
-import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { ModelMessage } from "ai";
 import { setupAgent, stopMcpServers } from "../cli.js";
 import type { AskUser } from "../tools/question-tool.js";
-import { renderMarkdown } from "../terminal/markdown.js";
-import { messageText, redactSecrets, setTerminalTitle } from "../terminal/format.js";
+import { setTerminalTitle } from "../terminal/format.js";
 import { filterChunk } from "../terminal/input-filter.js";
 import { resolveModel } from "../providers/registry.js";
 import type { OnPermission } from "../core/events.js";
@@ -57,13 +54,11 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     ...(setup.modelUnavailable !== undefined ? { modelUnavailable: setup.modelUnavailable } : {}),
   };
 
-  // Full-screen app on the alternate screen buffer (opencode-style): the UI
-  // owns the whole window, and the user's shell scrollback is restored intact
-  // on exit. SGR mouse reporting is enabled so the wheel scrolls the
-  // transcript; the sequences are stripped from stdin BEFORE Ink parses them
-  // (Ink would otherwise insert them into the input as garbage text).
-  const mouse = new EventEmitter();
-  tuiSetup.mouse = mouse;
+  // Claude Code-style: the app renders in the NORMAL screen buffer. The
+  // transcript is printed into the terminal's own scrollback (<Static> in
+  // App.tsx), so the mouse wheel scrolls natively — no mouse capture, no alt
+  // screen. Only bracketed paste is enabled; stdin is still filtered so any
+  // stray mouse/paste sequences never reach Ink's key parser as garbage text.
   // AERIN_SMOKE=1: CI smoke mode — pretend the streams are a TTY so the full
   // render pipeline runs headless, then self-exit via a synthesized /exit.
   const smoke = process.env["AERIN_SMOKE"] === "1";
@@ -90,7 +85,7 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
     if (carryTimer) clearTimeout(carryTimer);
     const result = filterChunk(carry, chunk.toString("utf8"));
     carry = result.carry;
-    for (const dir of result.wheel) mouse.emit("wheel", dir);
+    // result.wheel is ignored — mouse reporting is off; the terminal scrolls itself.
     if (result.clean.length > 0) filteredStdin.write(result.clean);
     if (carry) {
       // Flush held-back bytes shortly if no continuation arrives — they were
@@ -106,11 +101,11 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   process.stdin.on("data", onStdinData);
   process.stdin.resume(); // background detection may have left stdin explicitly paused
 
-  const leaveAltScreen = (): void => {
-    process.stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+  const resetTerminalModes = (): void => {
+    process.stdout.write("\x1b[?2004l");
   };
-  process.stdout.write("\x1b[?1049h\x1b[H\x1b[?1000h\x1b[?1006h\x1b[?2004h");
-  process.once("exit", leaveAltScreen);
+  process.stdout.write("\x1b[?2004h");
+  process.once("exit", resetTerminalModes);
   setTerminalTitle(`✦ aerin — ${setup.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "aerin"}`);
 
   try {
@@ -122,30 +117,11 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
   } finally {
     process.stdin.removeListener("data", onStdinData);
     process.stdin.pause();
-    leaveAltScreen();
+    resetTerminalModes();
     setTerminalTitle(""); // hand the title back to the shell
-    // The alt screen took the conversation with it — leave a plain transcript
-    // in the normal terminal so the session survives in scrollback.
-    printTranscript(setup.agent.history);
+    // No alt screen: the whole conversation is already in the terminal's
+    // scrollback — nothing to re-print on exit.
     await stopMcpServers(setup.mcpConnections);
     // index.ts force-exits after main() resolves — nothing left to do here.
   }
-}
-
-function printTranscript(history: readonly ModelMessage[]): void {
-  // Prompts and replies only — tool-call noise ("ls", "read", ...) has no
-  // value in shell scrollback and reads as ugly leftovers.
-  const out: string[] = [];
-  for (const m of history) {
-    if (m.role === "user") {
-      const t = messageText(m).trim();
-      if (t && !t.startsWith("[Conversation compacted")) out.push(`> ${t.split("\n")[0]?.slice(0, 200) ?? ""}`);
-    } else if (m.role === "assistant") {
-      const t = messageText(m).trim();
-      if (t) out.push(renderMarkdown(t, (process.stdout.columns ?? 80) - 2));
-    }
-  }
-  if (out.length === 0) return;
-  // Never let key-shaped strings land in shell scrollback.
-  process.stdout.write(`\n─── aerin session ───\n\n${redactSecrets(out.join("\n\n"))}\n\n`);
 }
