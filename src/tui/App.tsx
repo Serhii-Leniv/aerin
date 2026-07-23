@@ -912,6 +912,18 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
     ...setup.customCommands.map((c) => ({ name: `/${c.name}`, description: c.description })),
   ];
 
+  // Height budget for the live frame (see the "Live tail" comment below):
+  // cap every variable-height piece, then give streaming whatever is left.
+  const shownSubagents = [...subagents.entries()].slice(0, 4);
+  const shownTodos = todos.length > 6 ? todos.slice(0, 6) : todos;
+  const shownQueued = queued.length > 3 ? queued.slice(-3) : queued;
+  const fixedRows =
+    8 + // input box (3), status line (1), spinner (1), reasoning tail (≤3)
+    (todos.length > 0 ? shownTodos.length + 3 : 0) +
+    (subagents.size > 0 ? shownSubagents.length + 1 : 0) +
+    (queued.length > 0 ? shownQueued.length + 1 : 0);
+  const streamRows = Math.max(4, size.rows - 2 - fixedRows);
+
   return (
     <>
       {/* The transcript lives in the terminal's own scrollback: each item is
@@ -937,12 +949,16 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
         )}
       </Static>
 
-      {/* Live tail: everything below re-renders each frame and must stay
-          shorter than the window to keep Ink on its line-diff path. */}
+      {/* Live tail: everything below re-renders each frame and MUST stay
+          shorter than the window. The moment Ink's frame is as tall as the
+          terminal it switches to a clear-terminal-per-frame path that wipes
+          the screen and reprints the ENTIRE static transcript every frame
+          (duplicated banner, walls of re-printed text) — so every
+          variable-height piece here is hard-budgeted. */}
       <Box flexDirection="column">
       {streaming ? (
         <Box flexShrink={0}>
-          <Text>{tailLines(streaming, Math.max(6, size.rows - 10))}</Text>
+          <Text>{tailLines(streaming, streamRows)}</Text>
         </Box>
       ) : null}
       {thinking && reasoningTail ? (
@@ -957,20 +973,26 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       ) : null}
       {subagents.size > 0 ? (
         <Box flexDirection="column">
-          {[...subagents.entries()].map(([id, s]) => (
+          {shownSubagents.map(([id, s]) => (
             <Text key={id} color={C.dim}>
               {"  "}» {s.description} — {s.toolCalls} tools · {s.lastTool ?? "starting"}
             </Text>
           ))}
+          {subagents.size > shownSubagents.length ? (
+            <Text color={C.dim}>{"  "}» +{subagents.size - shownSubagents.length} more agents</Text>
+          ) : null}
         </Box>
       ) : null}
       {todos.length > 0 ? (
         <Box flexDirection="column" borderStyle="round" borderColor={C.dim} paddingX={1} alignSelf="flex-start">
-          {todos.map((t, i) => (
+          {shownTodos.map((t, i) => (
             <Text key={i} color={t.status === "done" ? C.ok : t.status === "active" ? C.accent : C.dim}>
               {t.status === "done" ? "[x]" : t.status === "active" ? "[>]" : "[ ]"} {t.text}
             </Text>
           ))}
+          {todos.length > shownTodos.length ? (
+            <Text color={C.dim}>… +{todos.length - shownTodos.length} more</Text>
+          ) : null}
         </Box>
       ) : null}
       {working && !permission && !question ? (
@@ -986,7 +1008,9 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
       {permission && !denyReasonMode ? (
         <Box flexDirection="column" borderStyle="round" borderColor={C.warn} paddingX={1}>
           <Text color={C.warn}>Permission: {permission.req.summary}</Text>
-          {permission.req.preview ? <DiffText diff={permission.req.preview} maxLines={25} /> : null}
+          {permission.req.preview ? (
+            <DiffText diff={permission.req.preview} maxLines={Math.max(4, Math.min(25, size.rows - 12))} />
+          ) : null}
           <SelectList
             active={true}
             items={[
@@ -1216,7 +1240,12 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
 
       {queued.length > 0 ? (
         <Box flexDirection="column" paddingX={2}>
-          {queued.map((q, i) => (
+          {queued.length > shownQueued.length ? (
+            <Text color={C.dim} dimColor>
+              (+{queued.length - shownQueued.length} more queued)
+            </Text>
+          ) : null}
+          {shownQueued.map((q, i) => (
             <Text key={i} color={C.dim} dimColor wrap="truncate-end">
               ❯ {q}
             </Text>

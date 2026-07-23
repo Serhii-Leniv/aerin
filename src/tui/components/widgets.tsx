@@ -2,6 +2,11 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { C } from "../theme.js";
 
+/** Terminal height at render time (undefined when not a TTY). */
+function stdoutRows(): number | undefined {
+  return process.stdout.rows;
+}
+
 export interface CommandSuggestion {
   name: string;
   description: string;
@@ -400,9 +405,13 @@ export function FilterSelect(props: {
     { isActive: props.active },
   );
 
+  // Clamp to the window: if the picker frame ever reaches the terminal
+  // height, Ink falls into its clear-terminal-per-frame path (screen wipe +
+  // full transcript reprint every frame).
+  const visibleRows = Math.max(4, Math.min(FILTER_VISIBLE_ROWS, (stdoutRows() ?? 24) - 8));
   const anchor = currentRow >= 0 ? currentRow : 0;
-  const windowStart = Math.max(0, Math.min(anchor - 6, rows.length - FILTER_VISIBLE_ROWS));
-  const visible = rows.slice(windowStart, windowStart + FILTER_VISIBLE_ROWS);
+  const windowStart = Math.max(0, Math.min(anchor - 6, rows.length - visibleRows));
+  const visible = rows.slice(windowStart, windowStart + visibleRows);
   const selectableCount = selectableRowIdx.length;
   const totalSelectable = props.items.filter((i) => !i.header).length;
 

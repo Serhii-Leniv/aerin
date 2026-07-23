@@ -69,8 +69,8 @@ export async function runTui(flags: TuiFlags, initialPrompt?: string): Promise<v
       if (process.stdin.isTTY) process.stdin.setRawMode(mode);
       return filteredStdin;
     },
-    ref: () => process.stdin.ref(),
-    unref: () => process.stdin.unref(),
+    ref: () => process.stdin.ref?.(),
+    unref: () => process.stdin.unref?.(),
   });
   if (smoke) {
     // One keystroke per chunk — coalesced writes would parse as pasted text.
