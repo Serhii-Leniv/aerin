@@ -1,11 +1,6 @@
-```
- █████╗ ███████╗██████╗ ██╗███╗   ██╗
-██╔══██╗██╔════╝██╔══██╗██║████╗  ██║
-███████║█████╗  ██████╔╝██║██╔██╗ ██║
-██╔══██║██╔══╝  ██╔══██╗██║██║╚██╗██║
-██║  ██║███████╗██║  ██║██║██║ ╚████║
-╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Serhii-Leniv/aerin/main/docs/assets/aerin-wordmark.svg" alt="AERIN" width="440">
+</p>
 
 <p align="center"><b>Aerin — your open-source coding agent.</b><br/>
 Any model, any provider · real coding tools · autonomous, safely · small enough to read in an afternoon.</p>

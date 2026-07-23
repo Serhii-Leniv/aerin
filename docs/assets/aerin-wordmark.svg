@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 364 118" role="img" aria-label="AERIN">
+  <style>
+    text {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 16px;
+      font-weight: bold;
+      white-space: pre;
+    }
+  </style>
+  <!-- The app's startup banner: ANSI Shadow wordmark, SUNSET row shades
+       (bright pink-red at the top melting into magenta) from src/tui/App.tsx. -->
+  <text xml:space="preserve" x="4" y="18" fill="#ff5577"> █████╗ ███████╗██████╗ ██╗███╗   ██╗</text>
+  <text xml:space="preserve" x="4" y="36" fill="#f7446e">██╔══██╗██╔════╝██╔══██╗██║████╗  ██║</text>
+  <text xml:space="preserve" x="4" y="54" fill="#ee3366">███████║█████╗  ██████╔╝██║██╔██╗ ██║</text>
+  <text xml:space="preserve" x="4" y="72" fill="#e04477">██╔══██║██╔══╝  ██╔══██╗██║██║╚██╗██║</text>
+  <text xml:space="preserve" x="4" y="90" fill="#d05590">██║  ██║███████╗██║  ██║██║██║ ╚████║</text>
+  <text xml:space="preserve" x="4" y="108" fill="#c055a9">╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝</text>
+</svg>
