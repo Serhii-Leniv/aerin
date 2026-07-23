@@ -1393,6 +1393,7 @@ export function App(props: { setup: TuiSetup; initialPrompt?: string }): React.R
             commands={allCommands}
             files={workspaceFiles}
             escActive={!working}
+            onScroll={scrollBy}
             recallLast={() => inputHistory[inputHistory.length - 1]}
             placeholder={
               working

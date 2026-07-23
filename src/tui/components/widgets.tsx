@@ -36,6 +36,8 @@ export function LineInput(props: {
   escActive?: boolean;
   /** Supplier of the last submitted message for double-Esc recall. */
   recallLast?: () => string | undefined;
+  /** Scroll the transcript (+1 back / -1 forward) — receives wheel-as-arrow bursts. */
+  onScroll?: (dir: number) => void;
 }): React.ReactElement {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -43,6 +45,22 @@ export function LineInput(props: {
   const [draft, setDraft] = useState("");
   const [suggIdx, setSuggIdx] = useState(0);
   const lastEsc = React.useRef(0);
+  // Wheel-as-arrows guard: terminals/tmux that translate the mouse wheel into
+  // arrow keys in the alt screen send them in rapid bursts. A lone arrow is
+  // held ~35ms — if more arrive in the window it was a wheel notch and every
+  // arrow becomes a transcript scroll step; only a genuinely lone keypress
+  // recalls input history. Scrolling can never summon old prompts.
+  const arrowBurst = React.useRef<{ last: number; pendingUp: boolean; timer: ReturnType<typeof setTimeout> | null }>({
+    last: 0,
+    pendingUp: false,
+    timer: null,
+  });
+  useEffect(
+    () => () => {
+      if (arrowBurst.current.timer) clearTimeout(arrowBurst.current.timer);
+    },
+    [],
+  );
 
   const set = (v: string, c: number) => {
     setValue(v);
@@ -152,24 +170,47 @@ export function LineInput(props: {
         setCursor(pos + Math.min(col, lines[target]?.length ?? 0));
         return;
       }
-      if (key.upArrow) {
-        if (history.length === 0) return;
-        if (histIdx === -1) setDraft(value);
-        const next = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
-        setHistIdx(next);
-        set(history[next] ?? "", (history[next] ?? "").length);
-        return;
-      }
-      if (key.downArrow) {
-        if (histIdx === -1) return;
-        if (histIdx >= history.length - 1) {
-          setHistIdx(-1);
-          set(draft, draft.length);
-        } else {
-          const next = histIdx + 1;
-          setHistIdx(next);
-          set(history[next] ?? "", (history[next] ?? "").length);
+      if (key.upArrow || key.downArrow) {
+        const dirUp = Boolean(key.upArrow);
+        const applyHistory = (up: boolean): void => {
+          if (up) {
+            if (history.length === 0) return;
+            if (histIdx === -1) setDraft(value);
+            const next = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
+            setHistIdx(next);
+            set(history[next] ?? "", (history[next] ?? "").length);
+          } else {
+            if (histIdx === -1) return;
+            if (histIdx >= history.length - 1) {
+              setHistIdx(-1);
+              set(draft, draft.length);
+            } else {
+              const next = histIdx + 1;
+              setHistIdx(next);
+              set(history[next] ?? "", (history[next] ?? "").length);
+            }
+          }
+        };
+        if (!props.onScroll) return applyHistory(dirUp); // no scroll target — no hold latency
+        const st = arrowBurst.current;
+        const now = Date.now();
+        const isBurst = st.timer !== null || now - st.last < 35;
+        st.last = now;
+        if (isBurst) {
+          if (st.timer) {
+            // The held first arrow of the burst was a scroll step too.
+            clearTimeout(st.timer);
+            st.timer = null;
+            props.onScroll(st.pendingUp ? 1 : -1);
+          }
+          props.onScroll(dirUp ? 1 : -1);
+          return;
         }
+        st.pendingUp = dirUp;
+        st.timer = setTimeout(() => {
+          st.timer = null;
+          applyHistory(dirUp);
+        }, 35);
         return;
       }
       if (key.backspace || key.delete) {
